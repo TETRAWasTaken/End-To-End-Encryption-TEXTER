@@ -199,7 +199,7 @@ class LoginRegistrationFrame(wx.Frame):
 
         self.panel.Layout()
         self.loginthread.join()
-        self.start(
+        self.start()
 
     def client(self):
         try:
