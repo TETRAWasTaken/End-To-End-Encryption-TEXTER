@@ -12,7 +12,7 @@ class Server(socket.socket):
         super().__init__(socket.AF_INET, socket.SOCK_STREAM)
         global ACTIVEUSERS
         self.secondary_event_initiator()
-        self.host = "104.211.179.11"
+        self.host = "104.40.129.89"
         self.users = []
         self.server_initiator()
 
