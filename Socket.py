@@ -7,7 +7,7 @@ import cache_managment_system as CMS
 
 hostname = socket.gethostname()
 addresses = socket.getaddrinfo(hostname, None, socket.AF_INET)
-ipv6_address = "104.211.179.11"
+ipv6_address = "104.40.129.89"
 
 class Server(socket.socket):
     def __init__(self, host=ipv6_address, port = None, cms: CMS.CACHEManager_Handler = None):
