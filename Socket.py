@@ -6,13 +6,12 @@ from typing import Optional, Callable
 import cache_managment_system as CMS
 
 hostname = socket.gethostname()
-addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
-ipv6_address = addresses[-1][4][0]
-ipv6_address = "2409:40c1:10de:eb68:b17d:98cd:f871:3aff"
+addresses = socket.getaddrinfo(hostname, None, socket.AF_INET)
+ipv6_address = "104.211.179.11"
 
 class Server(socket.socket):
     def __init__(self, host=ipv6_address, port = None, cms: CMS.CACHEManager_Handler = None):
-        super().__init__(socket.AF_INET6, socket.SOCK_STREAM)
+        super().__init__(socket.AF_INET, socket.SOCK_STREAM)
         self.host = host
         self.port = port
         self.cms = cms
