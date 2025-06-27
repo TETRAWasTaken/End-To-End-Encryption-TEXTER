@@ -9,11 +9,12 @@ ACTIVEUSERS = {}
 
 class Server(socket.socket):
     def __init__(self):
-        super().__init__(socket.AF_INET6, socket.SOCK_STREAM)
+        super().__init__(socket.AF_INET, socket.SOCK_STREAM)
         global ACTIVEUSERS
         hostname = socket.gethostname()
-        self.addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
-        self.host = self.addresses[0][4][0]
+        #self.addresses = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        #self.host = self.addresses[0][4][0]
+        self.host = '0.0.0.0'
         self.users = []
         self.server_initiator()
 
@@ -26,9 +27,9 @@ class Server(socket.socket):
         self.PNS()
 
     def PNS(self):
-        self.PNS_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        self.PNS_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
         self.PNS_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.PNS_socket.bind((self.host, 443, 0, 0))
+        self.PNS_socket.bind((self.host, 443))
         self.PNS_socket.listen(5)
         print("PNS activated on port 443")
         while True:
