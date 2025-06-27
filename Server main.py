@@ -11,7 +11,9 @@ class Server(socket.socket):
     def __init__(self):
         super().__init__(socket.AF_INET6, socket.SOCK_STREAM)
         global ACTIVEUSERS
-        self.secondary_event_initiator()
+        hostname = socket.gethostname()
+        self.addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
+        self.host = self.addresses[0][4][0]
         self.users = []
         self.server_initiator()
 
@@ -29,28 +31,22 @@ class Server(socket.socket):
         self.PNS_socket.bind((self.host, 12345, 0, 0))
         self.PNS_socket.listen(5)
         print("PNS activated on port 12345")
-        n = 0
         while True:
             try:
-                self.PNSclient_scoket, addr = self.PNS_socket.accept()
+                PNSclient_scoket, addr = self.PNS_socket.accept()
                 print(f"Connection from {addr} has been established, waiting for login or registration")
 
                 # Create a thread to handle this client
-                client_thread = threading.Thread(target=self.handle_client_auth, args=(self.PNSclient_scoket, addr, n))
+                client_thread = threading.Thread(target=self.handle_client_auth, args=(PNSclient_scoket, addr))
                 client_thread.daemon = True
                 client_thread.start()
-
-                # Increment port counter for next client
-                if n < len(self.ports) - 1:
-                    n += 1
-                else:
-                    n = 0  # Reset back to the first port if we've used them all
 
             except Exception as e:
                 print(f"Error in PNS server: {e}")
                 continue
 
-    def handle_client_auth(self, client_socket, addr, port_index):
+    def handle_client_auth(self, client_socket, addr):
+        authenticated_and_handled = False
         try:
             # Receive login or registration command
             logorreg = client_socket.recv(2048).decode()
@@ -72,17 +68,15 @@ class Server(socket.socket):
                         yes = '1'
                         client_socket.sendall(yes.encode())
 
-                        # Wait for port request
-                        req = client_socket.recv(2048).decode()
-                        if req and req == 'sendport':
-                            # Send port for chat server
-                            Socket = S.Server(port = self.ports[port_index], cms = self.cms)
-                            thread = threading.Thread(target=Socket.start)
-                            thread.start()
-                            client_socket.send(str(self.ports[port_index]).encode())
-                            self.users.append(user.group(0))
-                            ACTIVEUSERS[user.group(0)] = thread
-                            print(f"User {user.group(0)} logged in and assigned port {self.ports[port_index]}")
+                        socket_handler = S.Server(client_socket=client_socket, cms=self.cms)
+                        thread = threading.Thread(target=socket_handler.start)
+                        thread.daemon = True
+                        thread.start()
+
+                        self.users.append(user.group(0))
+                        ACTIVEUSERS[user.group(0)] = thread
+                        print(f"User {user.group(0)} logged in and handed over to socket handler.")
+                        authenticated_and_handled = True
 
                     elif (self.credentials[user.group(0)] != passw.group(0)):
                         print(f"self.credentials don't match for client {addr}")
@@ -122,16 +116,17 @@ class Server(socket.socket):
         except Exception as e:
             print(f"Error handling client {addr}: {e}")
         finally:
-            try:
-                client_socket.close()
-            except:
-                pass
+            if not authenticated_and_handled:
+                try:
+                    client_socket.close()
+                except:
+                    pass
 
     def user_thread_checker(self):
         while True:
             try:
-                for i in ACTIVEUSERS:
-                    if ACTIVEUSERS[i].is_alive() == False:
+                for i in list(ACTIVEUSERS.keys()):
+                    if not ACTIVEUSERS[i].is_alive():
                         ACTIVEUSERS[i].join()
                         self.cms.del_user_Match(i)
                         del ACTIVEUSERS[i]
@@ -139,15 +134,8 @@ class Server(socket.socket):
                     else:
                         continue
                 self.cms.ACTIVEUSERS = ACTIVEUSERS
-            except:
+            except (RuntimeError, KeyError):
                 continue
-
-    def secondary_event_initiator(self):
-        hostname = socket.gethostname()
-        self.addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
-        self.host = self.addresses[0][4][0]
-        self.ports = list(range(12346, 12351))
-
 
 
 if __name__ == "__main__":

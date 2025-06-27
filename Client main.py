@@ -102,15 +102,11 @@ class LoginRegistrationFrame(wx.Frame):
 
         if reqr:
             if (reqr == '1'):
-                reqr1 = 'sendport'
-                self.clientDNS_socket.send(reqr1.encode())
-                portno = self.clientDNS_socket.recv(2048).decode()
-                port_num = int(portno)
-
                 # Launch the messaging GUI
                 self.panel.Destroy()
                 frame1 = TextMessagingGUI(username=username)
-                frame1.client(port_num)
+                frame1.client(self.clientDNS_socket)
+                self.Show(False)
 
             elif (reqr == 'Credfail'):
                 self.status_msg.SetLabel("Username, Password don't match")
@@ -330,13 +326,9 @@ class TextMessagingGUI(wx.Frame):
                 wx.CallAfter(self.send_button.Disable)
                 break
 
-    def client(self, port_num=None):
-        # Use the port from login if available, otherwise use global port
-        current_port = port_num if port_num is not None else port
-
+    def client(self, server_socket):
         try:
-            self.client_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
-            self.client_socket.connect((IP, current_port, 0, 0))
+            self.client_socket = server_socket
             self.status_bar.SetLabelText('Connected to server')
             self.chat_history.AppendText("Connected to server. Enter a username to chat with.\n")
 

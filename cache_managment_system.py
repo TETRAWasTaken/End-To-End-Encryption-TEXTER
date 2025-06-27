@@ -40,10 +40,17 @@ class CACHEManager_Handler:
 
     def updateCache(self, user1, user2, text, flag):
         timestamp = str(datetime.datetime.now())
-        self.CACHE[user2][timestamp] = [text, flag, user1]
+        try:
+            self.CACHE[user2][timestamp] = [text, flag, user1]
+        except KeyError:
+            self.CACHE[user2] = {}
+            self.CACHE[user2][timestamp] = [text, flag, user1]
 
     def getCache(self, user1, user2):
-        return self.CACHE[user2]
+        try:
+            return self.CACHE[user2]
+        except KeyError:
+            return False
 
     def online_Status(self, receiver, sender):
         if receiver in self.ACTIVEUSERS and self.USERMATCH[receiver] == sender:

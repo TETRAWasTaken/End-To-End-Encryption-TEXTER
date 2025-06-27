@@ -5,19 +5,14 @@ import time
 from typing import Optional, Callable
 import cache_managment_system as CMS
 
-hostname = socket.gethostname()
-addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
-ipv6_address = addresses[0][4][0]
 
-class Server(socket.socket):
-    def __init__(self, host=ipv6_address, port = None, cms: CMS.CACHEManager_Handler = None):
-        super().__init__(socket.AF_INET6, socket.SOCK_STREAM)
-        self.host = host
-        self.port = port
+class Server:
+    def __init__(self, client_socket, cms: CMS.CACHEManager_Handler = None):
+        self.client_socket = client_socket
         self.cms = cms
         self.command_queue = queue.Queue()
-
-        if self.port is None or self.cms is None:
+        self.servernames = []
+        if self.cms is None:
             quit()
 
     def _process_command(self):
@@ -28,7 +23,7 @@ class Server(socket.socket):
                 args = command_payload.get("args", ())
 
                 if method_name:
-                    target_method = Optional[Callable] = getattr(self, method_name, None)
+                    target_method: Optional[Callable] = getattr(self, method_name, None)
                     if target_method and callable(target_method):
                         target_method(args[0])
                     else:
@@ -41,26 +36,20 @@ class Server(socket.socket):
                 pass
 
     def start(self):
-        print(f"Initiating socket instance on port : {self.port}")
-        socket_Thread = threading.Thread(target=self.socket)
-        socket_Thread.start()
+        print(f"Handing over client socket to socket instance")
+        self.handle_client()
 
-    def socket(self):
-        self.servernames = []
-        self.server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.host, self.port, 0, 0))
-        self.server_socket.listen(5)
 
-        while True:
-            self.client_socket, addr = self.server_socket.accept()
-            print(f"Connection from {addr} has been established on Port {self.port}.")
+    def handle_client(self):
+        try:
             user2 = self.client_socket.recv(2048).decode()
             user1 = self.client_socket.recv(2048).decode()
             self.servernames.append(user1)
             self.servernames.append(user2)
-            t1 = threading.Thread(target=self.processing)
-            t1.start()
+            self.processing()
+        except Exception as e:
+            print(f"Error handling client in Socket.Server: {e}")
+            self.client_socket.close()
 
     def processing(self):
         user = self.servernames[0]
@@ -75,6 +64,9 @@ class Server(socket.socket):
         t3.join()
         t6.join()
         t7.join()
+        self.client_socket.close()
+        print(f"Closed connection for {user}")
+
 
     def prompt(self):
         user = self.servernames[0]
@@ -93,36 +85,36 @@ class Server(socket.socket):
                     self.cms.update_CACHE()
             except (ConnectionError, ConnectionAbortedError):
                 print(f"Connection closed by {user}")
-                quit()
+                break
 
     def tcachepromt(self, user, user2):
         self.tcache = self.cms.getCache(user2, user)
-        while True:
-            try:
-                for i in self.tcache.keys():
-                    if self.tcache[i][2]==user2:
-                        if self.tcache[i][1] == 0:
-                            time.sleep(0.1)
-                            try:
-                                self.client_socket.send(self.tcache[i][0].encode())
-                            except (AttributeError):
+        if not self.tcache:
+            print(f"An Unknown error occured while fetching cache for {user2} from {user}")
+        else:
+            while True:
+                try:
+                    if self.client_socket._closed:
+                        break
+                    for i in self.tcache.keys():
+                        if self.tcache[i][2] == user2:
+                            if self.tcache[i][1] == 0:
+                                time.sleep(0.1)
+                                try:
+                                    self.client_socket.send(self.tcache[i][0].encode())
+                                except (AttributeError, ConnectionError):
+                                    continue
+                                self.tcache[i][1] = 1
+                            else:
                                 continue
-                            self.tcache[i][1] = 1
                         else:
                             continue
-                    else:
-                        continue
-            except (ConnectionRefusedError, ConnectionError, RuntimeError):
-                continue
+                    time.sleep(0.5)
+                except (ConnectionRefusedError, ConnectionError, RuntimeError):
+                    break
 
     def cmspromt(self, text):
         try:
             self.client_socket.send(text.encode())
         except (ConnectionError, ConnectionAbortedError):
             pass
-
-
-
-
-
-
