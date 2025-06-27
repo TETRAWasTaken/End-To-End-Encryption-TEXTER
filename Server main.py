@@ -9,10 +9,9 @@ ACTIVEUSERS = {}
 
 class Server(socket.socket):
     def __init__(self):
-        super().__init__(socket.AF_INET, socket.SOCK_STREAM)
+        super().__init__(socket.AF_INET6, socket.SOCK_STREAM)
         global ACTIVEUSERS
         self.secondary_event_initiator()
-        self.host = "104.40.129.89"
         self.users = []
         self.server_initiator()
 
@@ -25,7 +24,7 @@ class Server(socket.socket):
         self.PNS()
 
     def PNS(self):
-        self.PNS_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+        self.PNS_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
         self.PNS_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.PNS_socket.bind((self.host, 12345, 0, 0))
         self.PNS_socket.listen(5)
@@ -146,6 +145,7 @@ class Server(socket.socket):
     def secondary_event_initiator(self):
         hostname = socket.gethostname()
         self.addresses = socket.getaddrinfo(hostname, None, socket.AF_INET6)
+        self.host = self.addresses[0][4][0]
         self.ports = list(range(12346, 12351))
 
 

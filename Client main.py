@@ -4,8 +4,7 @@ import socket
 
 host = socket.gethostname()
 addresses = socket.getaddrinfo(host, None, socket.AF_INET6)
-IP = addresses[-1][4][0]
-IP = "2409:40c1:10de:eb68:b17d:98cd:f871:3aff"
+IP = addresses[0][4][0]
 port = 12345
 
 
