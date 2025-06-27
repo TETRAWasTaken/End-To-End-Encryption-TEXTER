@@ -29,6 +29,8 @@ jobs:
           python -m venv venv
           source venv/bin/activate
       
+      - name: Install dependencies
+        run: pip install -r requirements.txt
         
       # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
 
@@ -46,7 +48,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
@@ -64,9 +65,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_9D17A32382544F0596A312D58AAA1B83 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_31442B07A3074E95873854E58F118D30 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_766D6E0E14E74D88948BE6B62D97D983 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B04BA5DA7B714F8D9ADF4E27C05600E9 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_ED3B8B16174E4D83B091B0B4FAAAA62E }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_2E1F64569C3249A396B77A6E6FA2FD92 }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
