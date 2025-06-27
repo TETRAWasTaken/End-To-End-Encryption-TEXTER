@@ -28,9 +28,9 @@ class Server(socket.socket):
     def PNS(self):
         self.PNS_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
         self.PNS_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.PNS_socket.bind((self.host, 12345, 0, 0))
+        self.PNS_socket.bind((self.host, 443, 0, 0))
         self.PNS_socket.listen(5)
-        print("PNS activated on port 12345")
+        print("PNS activated on port 443")
         while True:
             try:
                 PNSclient_scoket, addr = self.PNS_socket.accept()
