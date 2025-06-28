@@ -9,7 +9,7 @@ import sys
 class CACHEManager_Handler:
     def __init__(self):
         print("Initializing CACHEManager_Handler.")
-        self.ACTIVEUSERS = None
+        self.ACTIVEUSERS = {}
         self.USERMATCH = {}
         self.credentials = {}
         self.data_initiation()
@@ -40,15 +40,20 @@ class CACHEManager_Handler:
 
     def updateCache(self, user1, user2, text, flag):
         timestamp = str(datetime.datetime.now())
+        # FIX: Standardize usernames by stripping the '#' before caching.
+        sender = user1.strip('#')
+        receiver = user2.strip('#')
         try:
-            self.CACHE[user2][timestamp] = [text, flag, user1]
+            self.CACHE[receiver][timestamp] = [text, flag, sender]
         except KeyError:
-            self.CACHE[user2] = {}
-            self.CACHE[user2][timestamp] = [text, flag, user1]
+            self.CACHE[receiver] = {}
+            self.CACHE[receiver][timestamp] = [text, flag, sender]
 
     def getCache(self, user1, user2):
+        # FIX: Strip '#' from username to correctly look up the cache.
+        receiver_key = user2.strip('#')
         try:
-            return self.CACHE[user2]
+            return self.CACHE[receiver_key]
         except KeyError:
             return False
 
@@ -59,17 +64,24 @@ class CACHEManager_Handler:
             return False
 
     def user_Match(self, sender, receiver):
+        # FIX: Standardize usernames in USERMATCH.
         self.USERMATCH[sender] = receiver
     def del_user_Match(self, sender):
-        del self.USERMATCH[sender]
+        # FIX: Consistently use stripped username for deletion.
+        try:
+            del self.USERMATCH[sender]
+        except KeyError:
+            pass
 
     def send_Text(self, reciever, text):
         thread_instance = self.ACTIVEUSERS[reciever]
         if hasattr(thread_instance, 'command_queue') and isinstance(thread_instance.command_queue, queue.Queue):
-            command_payload = {'method': 'cmspromt', 'args': text}
-            thread_instance.command_queue.put(command_payload)
+                command_payload = {'method': 'cmspromt', 'args': text}
+                thread_instance.command_queue.put(command_payload)
+                return True
         else:
-            pass
+            print(f"Error: No command queue found for {reciever}.")
+            return False
 
     def update_Credentials(self):
         try:
