@@ -11,7 +11,7 @@ import time
 class Server:
     def __init__(self):
         super().__init__()
-        self.host = '0.0.0.0'
+        self.host = '::'
         self.users = []
         self.server_initiator()
 
@@ -34,7 +34,7 @@ class Server:
 
     async def start_server(self):
         loop = asyncio.get_running_loop()
-        print(f"Starting WebSocket server on {self.host}:443")
+        print(f"Starting WebSocket server on {self.host}:80")
         async with websockets.serve(
                 lambda websocket: self.connection_handler(websocket, loop),
                 self.host,
