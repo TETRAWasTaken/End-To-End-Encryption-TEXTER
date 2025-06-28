@@ -38,7 +38,7 @@ class Server:
         async with websockets.serve(
                 lambda websocket: self.connection_handler(websocket, loop),
                 self.host,
-                443
+                80
         ):
             await asyncio.Future()  # Run forever
 
