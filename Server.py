@@ -7,11 +7,12 @@ import re
 import Socket as S
 import cache_managment_system as CMS
 import time
+import os
 
 class Server:
     def __init__(self):
         super().__init__()
-        self.host = '::'
+        self.host = '0.0.0.0'
         self.users = []
         self.server_initiator()
 
@@ -38,7 +39,7 @@ class Server:
         async with websockets.serve(
                 lambda websocket: self.connection_handler(websocket, loop),
                 self.host,
-                80
+                port = os.environ.get('PORT', 80)
         ):
             await asyncio.Future()  # Run forever
 
