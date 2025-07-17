@@ -1,5 +1,7 @@
 import asyncio
 import json
+import ssl
+
 import websockets
 import sys
 import threading
@@ -12,8 +14,10 @@ import os
 class Server:
     def __init__(self):
         super().__init__()
-        self.host = '0.0.0.0'
+        self.ssl_context = None
+        self.host = '::1'
         self.users = []
+        self.get_ssl_context()
         self.server_initiator()
 
     def server_initiator(self):
@@ -35,11 +39,12 @@ class Server:
 
     async def start_server(self):
         loop = asyncio.get_running_loop()
-        print(f"Starting WebSocket server on {self.host}:80")
+        print(f"Starting WebSocket server on {self.host}:12345 with SSL enabled. Waiting for connections...")
         async with websockets.serve(
-                lambda websocket: self.connection_handler(websocket, loop),
-                self.host,
-                port = os.environ.get('PORT', 80)
+            lambda websocket: self.connection_handler(websocket, loop),
+            self.host,
+            port = os.environ.get('PORT', 12345),
+            ssl=self.ssl_context,
         ):
             await asyncio.Future()  # Run forever
 
@@ -138,6 +143,13 @@ class Server:
             except AttributeError:
                 continue
 
+    def get_ssl_context(self):
+        try:
+            self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            self.ssl_context.load_cert_chain(certfile='server.crt', keyfile='server.key')
+        except Exception as e:
+            print(f"Error while loading SSL context: {e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     Server()
