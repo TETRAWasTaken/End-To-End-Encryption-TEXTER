@@ -9,6 +9,9 @@ End-to-end encryption will be added in later commits. Currently, the encryption 
 **Server Requirements:**
 The server must be run on a system connected to a non-NAT network. NAT networks can pose challenges for the client side to locate the server over the internet. To address this issue, we have utilized IPV6 protocol. However, the widespread implementation of IPV6 addresses creates challenges, as some home networks do not have access to the IPV6 internet.
 
+You NEED to create a SSL certificate in the project directory
+use the terminal command - openssl req -newkey rsa:2048 -nodes -keyout server.key -x509 -days 365 -out server.crt ( Intall OpenSSL in your system )
+
 **Client Setup:**
 Before running the server, please verify your public IPV6 address and provide it to the server. While running the client, ensure that you provide the same IPV6 address as provided to the server. The client will not encounter any issues working over a NAT network, as the NAT system automatically handles this request.
 
