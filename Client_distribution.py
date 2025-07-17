@@ -60,7 +60,6 @@ class LoginRegistrationFrame(wx.Frame):
         self.panel.SetSizer(self.sizer)
         self.Show(True)
 
-        # For async operations
         self.loop = None
         self.clientDNS_socket = None
         self.login_thread = None
@@ -101,7 +100,6 @@ class LoginRegistrationFrame(wx.Frame):
             self.status_msg.SetLabel("Please enter both username and password")
             return
         
-        # Schedule the async login to run on the event loop in the background thread
         asyncio.run_coroutine_threadsafe(self.do_login(username, passw), self.loop)
 
     async def do_login(self, username, passw):
@@ -126,17 +124,14 @@ class LoginRegistrationFrame(wx.Frame):
 
     def on_login_success(self, username):
         self.panel.Destroy()
-        # Pass the loop and the connected socket to the next frame
-        frame1 = TextMessagingGUI(username=username, loop=self.loop, server_socket=self.clientDNS_socket)
+        TextMessagingGUI(username=username, loop=self.loop, server_socket=self.clientDNS_socket)
         self.Show(False)
-        # The login frame is done, but we leave the asyncio thread running for the chat GUI.
 
     def on_register_click(self, event):
         self.login_button.Destroy()
         self.register_button.Destroy()
         self.status_label.Destroy()
-        
-        # Similar UI setup as on_login_click
+
         self.user_text = wx.StaticText(self.panel, label="New Username - ")
         self.message = wx.TextCtrl(self.panel)
         hsizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -214,7 +209,6 @@ class LoginRegistrationFrame(wx.Frame):
 
     async def client(self):
         uri = f"wss://{IP}:12345"
-        # The server uses a self-signed certificate, so we must disable hostname verification
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ssl_context.load_verify_locations(cafile='server.crt')
         try:
@@ -222,7 +216,6 @@ class LoginRegistrationFrame(wx.Frame):
             wx.CallAfter(self.status_label.SetLabel, "Connected. Please login or register.")
             wx.CallAfter(self.login_button.Enable)
             wx.CallAfter(self.register_button.Enable)
-            # Keep the connection alive by waiting until it's closed.
             await self.clientDNS_socket.wait_closed()
         except Exception as e:
             print(f"Failed to connect or connection lost: {e}")
@@ -300,12 +293,9 @@ class TextMessagingGUI(wx.Frame):
 
     async def do_connect(self):
         try:
-            # Signal to server who we want to chat with
             await self.client_socket.send(self.partner_username)
-            # Send our username to server
             await self.client_socket.send(self.username)
 
-            # Update GUI safely
             wx.CallAfter(self.message_entry.Enable)
             wx.CallAfter(self.send_button.Enable)
             wx.CallAfter(self.connect_button.Disable)
@@ -357,7 +347,6 @@ class TextMessagingGUI(wx.Frame):
         if self.client_socket:
             self.status_bar.SetLabelText('Connected to server')
             self.chat_history.AppendText("Connected to server. Enter a username to chat with.\n")
-            # Start listening for messages in the background
             asyncio.run_coroutine_threadsafe(self.prompt(), self.loop)
         else:
             self.status_bar.SetLabelText("Connection Error")
