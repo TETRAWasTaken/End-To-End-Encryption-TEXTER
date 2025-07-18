@@ -15,11 +15,12 @@ class Server:
         self.command_queue = queue.Queue()
         self.servernames = []
         self.associated_threads = None
+        self.kill_signal = False
         if self.cms is None:
             quit()
 
     def _process_command(self):
-        while True:
+        while not self.kill_signal:
             try:
                 command_payload = self.command_queue.get_nowait()
                 method_name = command_payload.get("method")
@@ -94,7 +95,7 @@ class Server:
     def prompt(self):  # Handles receiving messages
         user = self.servernames[0]
         user2 = self.servernames[1]
-        while True:
+        while not self.kill_signal:
             try:
                 # Block this thread until a message is received
                 future = asyncio.run_coroutine_threadsafe(self.websocket.recv(), self.loop)
@@ -111,18 +112,20 @@ class Server:
                 self.cms.update_CACHE()
             except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError):
                 print(f"Connection closed by {user}. Prompt thread exiting.")
+                self.kill_signal = True
                 break
             except Exception as e:
                 print(f"Error in prompt thread for {user}: {e}")
+                self.kill_signal = True
                 break
 
     def tcachepromt(self, user, user2):  # Handles sending cached messages
-        self.tcache = self.cms.getCache(user2, user)
+        self.tcache = self.cms.getCache(user)
         if not self.tcache:
             print(f"Could not fetch cache for {user} from {user2}.")
             return
 
-        while True:
+        while not self.kill_signal:
             try:
                 for i in list(self.tcache.keys()):
                     if self.tcache[i][2] == user2 and self.tcache[i][1] == 0:

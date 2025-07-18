@@ -16,7 +16,7 @@ class CACHEManager_Handler:
 
     def data_initiation(self):
         try:
-            with open('text CACHE json.json', 'r') as file:
+            with open('text cache json.json', 'r') as file:
                 self.CACHE = json.load(file)
                 print("Loaded text CACHE.")
         except (FileNotFoundError, SyntaxError):
@@ -49,11 +49,9 @@ class CACHEManager_Handler:
             self.CACHE[receiver] = {}
             self.CACHE[receiver][timestamp] = [text, flag, sender]
 
-    def getCache(self, user1, user2):
-        # FIX: Strip '#' from username to correctly look up the cache.
-        receiver_key = user2.strip('#')
+    def getCache(self, user1):
         try:
-            return self.CACHE[receiver_key]
+            return self.CACHE[user1]
         except KeyError:
             return False
 
@@ -64,10 +62,8 @@ class CACHEManager_Handler:
             return False
 
     def user_Match(self, sender, receiver):
-        # FIX: Standardize usernames in USERMATCH.
         self.USERMATCH[sender] = receiver
     def del_user_Match(self, sender):
-        # FIX: Consistently use stripped username for deletion.
         try:
             del self.USERMATCH[sender]
         except KeyError:
