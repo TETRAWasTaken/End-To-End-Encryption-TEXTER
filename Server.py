@@ -53,70 +53,71 @@ class Server:
         print(f"Connection from {addr} has been established, waiting for login or registration")
         authenticated_and_handled = False
         try:
-            logorreg = await websocket.recv()
+            while not authenticated_and_handled:
+                logorreg = await websocket.recv()
 
-            if logorreg == 'login':
-                print(f"Login requested by {addr}")
-                cred = await websocket.recv()
-                cred = json.loads(cred)
-                user = cred['username']
-                passw = cred['password']
+                if logorreg == 'login':
+                    print(f"Login requested by {addr}")
+                    cred = await websocket.recv()
+                    cred = json.loads(cred)
+                    user = cred['username']
+                    passw = cred['password']
 
-                if not user or not passw:
-                    print(f"Invalid credential format from {addr}")
-                    await websocket.send("Invalid format")
-                    return
+                    if not user or not passw:
+                        print(f"Invalid credential format from {addr}")
+                        await websocket.send("Invalid format")
+                        return
 
-                try:
-                    if self.credentials[user] == passw:
-                        await websocket.send('1')
+                    try:
+                        if self.credentials[user] == passw:
+                            await websocket.send('1')
 
-                        # Hand over to the threaded handler
-                        socket_handler = S.Server(websocket=websocket, cms=self.cms, loop=loop)
-                        socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
-                        socket_handler.associated_thread.daemon = True
-                        socket_handler.associated_thread.start()
+                            # Hand over to the threaded handler
+                            socket_handler = S.Server(websocket=websocket, cms=self.cms, loop=loop)
+                            socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
+                            socket_handler.associated_thread.daemon = True
+                            socket_handler.associated_thread.start()
 
-                        self.users.append(user)
-                        print(f"User {user} logged in and handed over to socket handler.")
-                        authenticated_and_handled = True
+                            self.users.append(user)
+                            print(f"User {user} logged in and handed over to socket handler.")
+                            authenticated_and_handled = True
 
-                        # Keep this handler alive until the thread is done and the websocket is closed.
-                        await websocket.wait_closed()
+                            # Keep this handler alive until the thread is done and the websocket is closed.
+                            await websocket.wait_closed()
 
-                    else:  # Password mismatch
-                        print(f"Credentials don't match for client {addr}")
-                        await websocket.send("Credfail")
+                        else:  # Password mismatch
+                            print(f"Credentials don't match for client {addr}")
+                            await websocket.send("Credfail")
 
-                except KeyError:
-                    print(f"Account not found for {user if user else 'unknown'}")
-                    await websocket.send("NAF")
+                    except KeyError:
+                        print(f"Account not found for {user if user else 'unknown'}")
+                        await websocket.send("NAF")
 
-            elif logorreg == 'reg':
-                print(f"Registration requested by {addr}")
-                cred = await websocket.recv()
-                cred = json.loads(cred)
-                user = cred['username']
-                passw = cred['password']
+                elif logorreg == 'reg':
+                    print(f"Registration requested by {addr}")
+                    cred = await websocket.recv()
+                    cred = json.loads(cred)
+                    user = cred['username']
+                    passw = cred['password']
 
-                if not user or not passw:
-                    print(f"Invalid registration format from {addr}")
-                    await websocket.send("Invalid format")
-                    return
+                    if not user or not passw:
+                        print(f"Invalid registration format from {addr}")
+                        await websocket.send("Invalid format")
+                        return
 
-                if user in self.credentials.keys():
-                    print(f"Registration failed, username {user} already exists")
-                    await websocket.send('AAE')
+                    if user in self.credentials.keys():
+                        print(f"Registration failed, username {user} already exists")
+                        await websocket.send('AAE')
+                    else:
+                        print(f"Registration successful for {user} from {addr}")
+                        self.credentials[user] = passw
+                        print(f"Updated self.credentials: {self.credentials}")
+                        await websocket.send('success')
+                        self.cms.update_Credentials()
+
                 else:
-                    print(f"Registration successful for {user} from {addr}")
-                    self.credentials[user] = passw
-                    print(f"Updated self.credentials: {self.credentials}")
-                    await websocket.send('success')
-                    self.cms.update_Credentials()
-
-            else:
-                print(f"Unknown command '{logorreg}' from {addr}")
-                await websocket.send("Unknown command")
+                    print(f"Unknown command '{logorreg}' from {addr}")
+                    await websocket.send("Unknown command")
 
         except websockets.exceptions.ConnectionClosed:
             print(f"Connection from {addr} closed during authentication.")
@@ -140,8 +141,8 @@ class Server:
             except (RuntimeError, KeyError) as e:
                 print(f"Error in user_thread_checker: {e}")
                 continue
-            except AttributeError:
-                continue
+            except Exception as e:
+                print(f"Error : {e}")
 
     def get_ssl_context(self):
         try:

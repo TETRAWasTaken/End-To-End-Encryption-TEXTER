@@ -102,6 +102,9 @@ class LoginRegistrationFrame(wx.Frame):
         
         asyncio.run_coroutine_threadsafe(self.do_login(username, passw), self.loop)
 
+    def reset_login(self):
+        self.on_login_click(None)
+
     async def do_login(self, username, passw):
         if not self.clientDNS_socket:
             wx.CallAfter(self.status_msg.SetLabel, "Not connected to server.")
@@ -116,6 +119,7 @@ class LoginRegistrationFrame(wx.Frame):
                 wx.CallAfter(self.on_login_success, username)
             elif response == 'Credfail':
                 wx.CallAfter(self.status_msg.SetLabel, "Username, Password don't match")
+                self.reset_login()
             else:
                 wx.CallAfter(self.status_msg.SetLabel, "No Account Found!")
         except Exception as e:
