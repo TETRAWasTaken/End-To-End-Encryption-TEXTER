@@ -1,5 +1,4 @@
 import sys
-
 import wx
 import threading
 import socket

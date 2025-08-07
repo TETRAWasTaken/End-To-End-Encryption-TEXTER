@@ -5,9 +5,8 @@ import ssl
 import websockets
 import sys
 import threading
-import re
 import Socket as S
-import cache_managment_system as CMS
+from Server import cache_managment_system as CMS
 import time
 import os
 
