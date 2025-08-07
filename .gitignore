@@ -5,4 +5,3 @@
 .venv
 .server.crt
 .server.key
-X3DH-Async-Protocol/database.ini
