@@ -4,7 +4,7 @@ import websockets
 import threading
 import time
 from typing import Optional, Callable
-from Server import cache_managment_system as CMS
+import cache_managment_system as CMS
 
 
 class Server:

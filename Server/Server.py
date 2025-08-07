@@ -6,7 +6,7 @@ import websockets
 import sys
 import threading
 import Socket as S
-from Server import cache_managment_system as CMS
+import cache_managment_system as CMS
 import time
 import os
 

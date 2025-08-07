@@ -6,3 +6,6 @@
 .server.crt
 .server.key
 X3DH-Async-Protocol/database.ini
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/vcs.xml

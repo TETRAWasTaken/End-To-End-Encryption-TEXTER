@@ -23,6 +23,8 @@ class KeyStorage:
         self.one_time_pre_key : Dict[int, x25519.X25519PublicKey] = {}
         self.StorageManager = StorageManager.StorageManager
 
+        self.StorageManager = StorageManager.StorageManager
+
     def StoreUserKeyBundle(self, user_id: str,
                            identity_key: x25519.X25519PublicKey,
                            signed_pre_key: x25519.X25519PublicKey,
@@ -50,4 +52,22 @@ class KeyStorage:
             print(f"Error : {e} while loading KeyBundle")
             return {}
 
-    def Check_User
+    def Check_User(self):
+        try:
+            self.StorageManager.cur.execute("Select exists ( select user_id from User_Info where user_id = %s))",
+                                            (self.user_id,))
+            if self.StorageManager.cur.fetchone()[0]:
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(f"Error : {e} while checking User")
+            return False
+
+    def DeleteUserKeyBundle(self) -> None:
+        try:
+            self.StorageManager.DeleteKeyBundle(self.user_id)
+            return True
+        except Exception as e:
+            print(f"Error : {e} while deleting KeyBundle")
+            return False

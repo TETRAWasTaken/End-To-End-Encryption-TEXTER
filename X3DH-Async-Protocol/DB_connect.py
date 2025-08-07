@@ -7,10 +7,10 @@ and perform certain sql queries.
 """
 class DB_connect:
     def __init__(self):
-        self.conn = None
+        self.pool = None
         self._connect() # Call the internal connection method during initialization
 
-    def load_config(self, filename='database.ini', section='postgresql') -> dict:
+    def load_config(self, filename: object = 'database.ini', section: object = 'postgresql') -> dict:
         """ Load database configuration from file """
 
         parser = ConfigParser()
@@ -24,7 +24,6 @@ class DB_connect:
         else:
             raise Exception(f'Section {section} not found in the {filename} file')
 
-        print(config)
         return config
 
     def _connect(self):
@@ -34,20 +33,24 @@ class DB_connect:
         """
 
         try:
-            self.conn = psycopg2.connect(**self.load_config())
-            print("Connection to PostgreSQL DB successful")
+            self.pool = psycopg2.pool.ThreadedConnectionPool(dsn = self.load_config(),
+                                                             minconn = 1,
+                                                             maxconn = 10
+                                                             )
+            print("Connection Pooling to PostgreSQL DB successful")
+
         except (psycopg2.DatabaseError, Exception) as e:
             print(f"Error {e} occurred while connecting to PostgreSQL DB")
-            self.conn = None # Ensure conn is None if connection fails
+            self.pool = None
 
-    def close(self):
+    def closeall(self):
         """ Closes the database connection if it is open. """
-        if self.conn:
-            self.conn.close()
+        if self.pool:
+            self.pool.closeall()
             print("Connection to PostgreSQL DB closed.")
-            self.conn = None
+            self.pool = None
 
 if __name__ == '__main__':
     # Create an instance of DB_connect
     db_instance = DB_connect()
-    conn = db_instance.conn
+    conn = db_instance.pool.getconn()
