@@ -1,20 +1,29 @@
 from configparser import ConfigParser
 import psycopg2
+from psycopg2 import pool  # Explicitly import the pool module
 
 """
 This file contains the utility to connect to the postgres database
 and perform certain sql queries.
 """
+
+
 class DB_connect:
     def __init__(self):
         self.pool = None
-        self._connect() # Call the internal connection method during initialization
+        self._connect()  # Call the internal connection method during initialization
 
-    def load_config(self, filename: object = 'database.ini', section: object = 'postgresql') -> dict:
-        """ Load database configuration from file """
+    def load_config(self, filename: str = 'database.ini', section: str = 'postgresql') -> dict:
+        """
+        Load database configuration from file
+        :param filename: name of the configuration file
+        :param section: section of database configuration
+        :return: a dictionary of database parameters
+        """
 
         parser = ConfigParser()
-        parser.read(filename)
+        if not parser.read(filename):
+            raise Exception(f"Configuration file '{filename}' not found or is empty.")
 
         config = {}
         if parser.has_section(section):
@@ -28,29 +37,69 @@ class DB_connect:
 
     def _connect(self):
         """
-        Connect to the PostgreSQL database server and store the connection.
-        This connection will remain open until explicitly closed by the class instance.
+        Connect to the PostgreSQL database server and create a connection pool.
+        This pool will remain open until explicitly closed by the class instance.
+        :return: None
         """
 
         try:
-            self.pool = psycopg2.pool.ThreadedConnectionPool(dsn = self.load_config(),
-                                                             minconn = 1,
-                                                             maxconn = 10
-                                                             )
+            config_params = self.load_config()
+
+            self.pool = pool.ThreadedConnectionPool(minconn=1,
+                                                    maxconn=10,
+                                                    **config_params
+                                                    )
             print("Connection Pooling to PostgreSQL DB successful")
 
         except (psycopg2.DatabaseError, Exception) as e:
-            print(f"Error {e} occurred while connecting to PostgreSQL DB")
+            print(f"Error occurred while connecting to PostgreSQL DB: {e}")
             self.pool = None
 
     def closeall(self):
-        """ Closes the database connection if it is open. """
+        """
+        Closes all connections in the pool.
+        :return: None
+        """
+
         if self.pool:
             self.pool.closeall()
-            print("Connection to PostgreSQL DB closed.")
+            print("Connection pool to PostgreSQL DB closed.")
             self.pool = None
 
+
+
+"""
+Test code for the class, this will be executed when the file is run directly.
+This is not recommended for production use.
+"""
 if __name__ == '__main__':
     # Create an instance of DB_connect
     db_instance = DB_connect()
-    conn = db_instance.pool.getconn()
+
+    # Check if the connection pool was successfully created before using it
+    if db_instance.pool:
+        conn = None
+        try:
+            # Get a connection from the pool to test
+            print("Attempting to get a connection from the pool...")
+            conn = db_instance.pool.getconn()
+            print("Successfully retrieved a connection from the pool.")
+
+            # It's good practice to perform a simple query to verify the connection is live
+            with conn.cursor() as cur:
+                cur.execute('SELECT version();')
+                db_version = cur.fetchone()
+                print(f"Database connection verified. Version: {db_version[0]}")
+
+        except (psycopg2.Error, Exception) as e:
+            print(f"An error occurred while using the connection: {e}")
+
+        finally:
+            # Return the connection to the pool if it was acquired
+            if conn:
+                db_instance.pool.putconn(conn)
+                print("Connection returned to the pool.")
+            # Close all connections in the pool when the script is done
+            db_instance.closeall()
+    else:
+        print("Failed to create a database connection pool. Please check configuration and database status.")

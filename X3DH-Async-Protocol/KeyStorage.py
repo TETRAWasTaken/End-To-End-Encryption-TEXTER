@@ -11,7 +11,8 @@ import os
 import StorageManager
 
 """
-This is a Key storage protocol for the Server, this 
+This is a Key storage protocol for the Server, this maintains the reliability 
+in storing the keys accurately
 """
 
 class KeyStorage:
@@ -52,14 +53,9 @@ class KeyStorage:
             print(f"Error : {e} while loading KeyBundle")
             return {}
 
-    def Check_User(self):
+    def _Check_User(self):
         try:
-            self.StorageManager.cur.execute("Select exists ( select user_id from User_Info where user_id = %s))",
-                                            (self.user_id,))
-            if self.StorageManager.cur.fetchone()[0]:
-                return True
-            else:
-                return False
+            return self.StorageManager.check_user(self.user_id)
         except Exception as e:
             print(f"Error : {e} while checking User")
             return False
