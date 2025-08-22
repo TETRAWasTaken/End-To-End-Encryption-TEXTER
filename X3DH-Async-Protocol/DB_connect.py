@@ -15,7 +15,7 @@ class DB_connect:
 
     def load_config(self, filename: str = 'database.ini', section: str = 'postgresql') -> dict:
         """
-        Load database configuration from file
+        Load database configuration from the file
         :param filename: name of the configuration file
         :param section: section of database configuration
         :return: a dictionary of database parameters

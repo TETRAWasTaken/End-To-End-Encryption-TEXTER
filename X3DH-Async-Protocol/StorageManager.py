@@ -1,8 +1,5 @@
-import json
-import os
 import DB_connect as DBC
 import datetime
-import psycopg2
 
 """
 This class is meant for retrieval and manipulation of file storage
@@ -10,6 +7,11 @@ This class will later be updated to use a SQL based database managment system fo
 """
 
 class StorageManager:
+    """
+    This class is meant for retrieval and manipulation of file storage
+    This class acts as an API for the database querying and prevents SQL vulnerabilities
+    by seperating all the queryies in this class and keeping them injection safe
+    """
     def __init__(self, DB : DBC.DB_connect) -> None:
         try:
             self.DB = DB
@@ -17,6 +19,11 @@ class StorageManager:
             print(f"Error : {e} while initialising KeyStorage")
 
     def check_user(self, user_id : str) -> bool:
+        """
+        Query the database to check if the user exists
+        :param user_id:
+        :return:
+        """
         try:
             conn = self.DB.pool.getconn
             cur = conn.cursor()
@@ -34,7 +41,7 @@ class StorageManager:
             self.DB.pool.putconn(conn)
             return False
 
-    def SaveKeyBundle(self, KeyBundle: dict, user_id : str) -> None:
+    def SaveKeyBundle(self, KeyBundle: dict, user_id : str) -> bool:
         """
         This Function saves the KeyBundle to the database.
         :param KeyBundle:
@@ -58,10 +65,11 @@ class StorageManager:
 
         except Exception as e:
             print(f"Error : {e} while saving KeyBundle")
-            return
+            return False
 
         conn.commit()
         self.DB.pool.putconn(conn)
+        return True
 
     def LoadKeyBundle(self, user_id : str) -> dict:
         """

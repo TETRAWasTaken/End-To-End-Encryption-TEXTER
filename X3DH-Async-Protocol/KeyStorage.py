@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
 import cryptography
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -16,6 +15,9 @@ in storing the keys accurately
 """
 
 class KeyStorage:
+    """
+    This class is meant for retrieval and manipulation of file storage
+    """
     def __init__(self, user_id: str):
         self.user_id = user_id
         self.identity_key : Optional[x25519.X25519PublicKey] = None
@@ -30,7 +32,16 @@ class KeyStorage:
                            identity_key: x25519.X25519PublicKey,
                            signed_pre_key: x25519.X25519PublicKey,
                            signed_pre_key_signature: bytes,
-                           one_time_pre_key: dict[int, x25519.X25519PublicKey]) -> None:
+                           one_time_pre_key: dict[int, x25519.X25519PublicKey]) -> bool:
+        """
+        Calls the Storage manager to save the KeyBundle to the database.
+        :param user_id:
+        :param identity_key:
+        :param signed_pre_key:
+        :param signed_pre_key_signature:
+        :param one_time_pre_key:
+        :return: None
+        """
 
         KeyBundlePayload = {
             user_id: user_id,
@@ -40,9 +51,16 @@ class KeyStorage:
             one_time_pre_key: one_time_pre_key
         }
 
-        self.StorageManager.SaveKeyBundle(KeyBundlePayload, self.user_id)
+        if self.StorageManager.SaveKeyBundle(KeyBundlePayload, self.user_id) :
+            return True
+        else:
+            return False
 
     def LoadUserKeyBundle(self) -> dict:
+        """
+        call the Storage manager to load the KeyBundle from the database.
+        :return: dict
+        """
         try :
             KeyBundle = self.StorageManager.LoadKeyBundle(self.user_id)
             if KeyBundle:
@@ -54,13 +72,21 @@ class KeyStorage:
             return {}
 
     def _Check_User(self):
+        """
+        Call the Storage manager to check if the user exists.
+        :return: Bool
+        """
         try:
             return self.StorageManager.check_user(self.user_id)
         except Exception as e:
             print(f"Error : {e} while checking User")
             return False
 
-    def DeleteUserKeyBundle(self) -> None:
+    def DeleteUserKeyBundle(self) -> bool:
+        """
+        Call the Storage manager to delete the KeyBundle from the database.
+        :return: Bool
+        """
         try:
             self.StorageManager.DeleteKeyBundle(self.user_id)
             return True

@@ -20,10 +20,11 @@ HKDF_HASH_ALGORITHM = hashes.SHA256()
 
 class EncryptionUtil():
     def __init__(self):
-
+        pass
     def generate_x25519_key_pair(self):
         """
         Generates a private and public key pair for use in the X25519 algorithm.
+        :return: A tuple containing the private key and public key.
         """
         private_key = x25519.X25519PrivateKey.generate()
         public_key = private_key.public_key()
@@ -32,6 +33,7 @@ class EncryptionUtil():
     def generate_ed25519_key_pair(self):
         """
         Generates a private and public key pair for use in the Ed25519 algorithm.
+        :return: A tuple containing the private key and public key.
         """
         private_key = ed25519.Ed25519PrivateKey.generate()
         public_key = private_key.public_key()
@@ -40,6 +42,10 @@ class EncryptionUtil():
     def derive_HKDF_key(self, key, salt, info):
         """
         Derives a key using HKDF.
+        :param key: The key to derive from.
+        :param salt: The salt to use.
+        :param info: The info to use.
+        :return: The derived key.
         """
         hkdf = HKDF(algorithm=HKDF_HASH_ALGORITHM,
                     length=CHAIN_KEY_LENGTH,
@@ -53,7 +59,10 @@ class EncryptionUtil():
         bytes, bytes, bytes]:
         """
         Encrypts plaintext using AES-256-GCM.
-        Returns (ciphertext, nonce, tag)
+        :param key: The key to use for encryption.
+        :param plaintext: The plaintext to encrypt.
+        :param associated_data: Additional data to authenticate.
+        :return: A tuple containing ciphertext, nonce, and tag.
         """
         nonce = os.urandom(AES_GCM_NONCE_LEN)
         cipher = Cipher(algorithms.AES(key), modes.GCM(nonce), backend=default_backend())
@@ -69,6 +78,12 @@ class EncryptionUtil():
         """
         Decrypts ciphertext using AES-256-GCM.
         Raises InvalidTag exception on authentication failure.
+        :param key: The key to use for decryption.
+        :param ciphertext: The ciphertext to decrypt.
+        :param nonce: The nonce used for encryption.
+        :param tag: The tag used for authentication.
+        :param associated_data: Additional data to authenticate.
+        :return: The decrypted plaintext.
         """
         cipher = Cipher(algorithms.AES(key), modes.GCM(nonce, tag), backend=default_backend())
         decryptor = cipher.decryptor()
