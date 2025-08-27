@@ -12,10 +12,13 @@ import os
 
 Keystorage = os.path.join('../X3DH-Async-Protocol', 'KeyStorage')
 Storagemanager = os.path.join('../X3DH-Async-Protocol', 'StorageManager')
+Dbconnect = os.path.join('../X3DH-Async-Protocol', 'DB_connect')
+sys.path.append(Dbconnect)
 sys.path.append(Keystorage)
 sys.path.append(Storagemanager)
 import KeyStorage
 import StorageManager
+import DB_connect
 
 class Server:
     def __init__(self):
@@ -27,6 +30,7 @@ class Server:
         self.server_initiator()
 
     def server_initiator(self):
+        self.DB = DB_connect.DB_connect()
         self.cms = CMS.CACHEManager_Handler()
         self.StorageManager = KeyStorage.StorageManager()
         self.credentials = self.cms.credentials

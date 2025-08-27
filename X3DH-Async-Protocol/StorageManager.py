@@ -16,8 +16,6 @@ class StorageManager:
     by seperating all the queryies in this class and keeping them injection safe
     """
     def __init__(self, DB : DBC.DB_connect) -> None:
-        self.command_queue = queue.Queue()
-        self.kill_signal = False
         try:
             self.DB = DB
         except Exception as e:
@@ -138,7 +136,7 @@ class StorageManager:
             conn.commit()
             self.DB.pool.putconn(conn)
         except Exception as e:
-            print(f"Error : {e} while deleting KeyBundle"
+            print(f"Error : {e} while deleting KeyBundle")
 
 
 

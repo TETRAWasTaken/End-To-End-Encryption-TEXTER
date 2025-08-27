@@ -52,61 +52,69 @@ class CACHEManager_Handler:
                 self.db_connector.pool.putconn(conn)
 
     def data_initiation(self):
-        try:
-            with open('text cache json.json', 'r') as file:
-                self.CACHE = json.load(file)
-                print("Loaded text CACHE.")
-        except (FileNotFoundError, SyntaxError):
-            print("No CACHE file found or invalid format. Creating new CACHE.")
-            self.CACHE = {}  # Initialize empty CACHE if file doesn't exist
+        with self._lock:
+            try:
+                with open('text cache json.json', 'r') as file:
+                    self.CACHE = json.load(file)
+                    print("Loaded text CACHE.")
+            except (FileNotFoundError, SyntaxError):
+                print("No CACHE file found or invalid format. Creating new CACHE.")
+                self.CACHE = {}  # Initialize empty CACHE if file doesn't exist
 
-        # Make sure all expected users exist in the CACHE
-        for username in self.credentials.keys():
-            username = username.strip('#')  # Remove # from username for CACHE key
-            if username not in self.CACHE:
-                self.CACHE[username] = {}
-                print(f"Added {username} to CACHE.")
+            # Make sure all expected users exist in the CACHE
+            for username in self.credentials.keys():
+                username = username.strip('#')  # Remove # from username for CACHE key
+                if username not in self.CACHE:
+                    self.CACHE[username] = {}
+                    print(f"Added {username} to CACHE.")
 
     def updateCache(self, user1, user2, text, flag):
-        timestamp = str(datetime.datetime.now())
-        # FIX: Standardize usernames by stripping the '#' before caching.
-        sender = user1.strip('#')
-        receiver = user2.strip('#')
-        try:
-            self.CACHE[receiver][timestamp] = [text, flag, sender]
-        except KeyError:
-            self.CACHE[receiver] = {}
-            self.CACHE[receiver][timestamp] = [text, flag, sender]
+        with self._lock:
+            timestamp = str(datetime.datetime.now())
+            # FIX: Standardize usernames by stripping the '#' before caching.
+            sender = user1.strip('#')
+            receiver = user2.strip('#')
+            try:
+                self.CACHE[receiver][timestamp] = [text, flag, sender]
+            except KeyError:
+                self.CACHE[receiver] = {}
+                self.CACHE[receiver][timestamp] = [text, flag, sender]
 
     def getCache(self, user1):
-        try:
-            return self.CACHE[user1]
-        except KeyError:
-            return False
+        with self._lock:
+            try:
+                return self.CACHE[user1]
+            except KeyError:
+               return False
 
     def online_Status(self, receiver, sender):
-        if receiver in self.ACTIVEUSERS and self.USERMATCH[receiver] == sender:
-            return True
-        else:
-            return False
+        with self._lock:
+            if receiver in self.ACTIVEUSERS and self.USERMATCH[receiver] == sender:
+                return True
+            else:
+                return False
 
     def user_Match(self, sender, receiver):
-        self.USERMATCH[sender] = receiver
+        with self._lock:
+            self.USERMATCH[sender] = receiver
+
     def del_user_Match(self, sender):
-        try:
-            del self.USERMATCH[sender]
-        except KeyError:
-            pass
+        with self._lock:
+            try:
+                del self.USERMATCH[sender]
+            except KeyError:
+                pass
 
     def send_Text(self, reciever, text):
-        thread_instance = self.ACTIVEUSERS[reciever]
-        if hasattr(thread_instance, 'command_queue') and isinstance(thread_instance.command_queue, queue.Queue):
+        with self._lock:
+            thread_instance = self.ACTIVEUSERS[reciever]
+            if hasattr(thread_instance, 'command_queue') and isinstance(thread_instance.command_queue, queue.Queue):
                 command_payload = {'method': 'cmspromt', 'args': text}
                 thread_instance.command_queue.put(command_payload)
                 return True
-        else:
-            print(f"Error: No command queue found for {reciever}.")
-            return False
+            else:
+                print(f"Error: No command queue found for {reciever}.")
+                return False
 
     def update_Credentials(self, username, password):
         """
