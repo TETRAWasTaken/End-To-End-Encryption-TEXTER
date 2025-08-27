@@ -5,13 +5,17 @@ import threading
 import time
 from typing import Optional, Callable
 import cache_managment_system as CMS
+import sys
+sys.path.append('../X3DH-Async-Protocol')
+import KeyStorage
 
 
 class Server:
-    def __init__(self, websocket, cms: CMS.CACHEManager_Handler, loop: asyncio.AbstractEventLoop):
+    def __init__(self, websocket, cms: CMS.CACHEManager_Handler, loop: asyncio.AbstractEventLoop, KeyStorage: KeyStorage.KeyStorage):
         self.websocket = websocket
         self.cms = cms
         self.loop = loop
+        self.KeyStorage = KeyStorage
         self.command_queue = queue.Queue()
         self.servernames = []
         self.associated_threads = None

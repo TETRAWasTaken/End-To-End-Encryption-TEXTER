@@ -1,5 +1,8 @@
+import queue
+
 import DB_connect as DBC
 import datetime
+from typing import List, Dict, Optional, Callable
 
 """
 This class is meant for retrieval and manipulation of file storage
@@ -13,6 +16,8 @@ class StorageManager:
     by seperating all the queryies in this class and keeping them injection safe
     """
     def __init__(self, DB : DBC.DB_connect) -> None:
+        self.command_queue = queue.Queue()
+        self.kill_signal = False
         try:
             self.DB = DB
         except Exception as e:
@@ -28,7 +33,7 @@ class StorageManager:
             conn = self.DB.pool.getconn
             cur = conn.cursor()
 
-            cur.execute("Select exists ( select user_id from User_Info where user_id = %s))",
+            cur.execute("Select exists (select user_id from User_Info where user_id = %s)",
                                             (user_id,))
             if cur.fetchone()[0]:
                 self.DB.pool.putconn(conn)
@@ -38,7 +43,6 @@ class StorageManager:
                 return False
         except Exception as e:
             print(f"Error : {e} while checking User")
-            self.DB.pool.putconn(conn)
             return False
 
     def SaveKeyBundle(self, KeyBundle: dict, user_id : str) -> bool:
@@ -51,17 +55,19 @@ class StorageManager:
         try:
             conn = self.DB.pool.getconn
             cur = conn.cursor()
+
+            time_stamp_cr = datetime.datetime.now()
             # Inserting Identity Key
             cur.execute("Insert into identity_key (user_id, identity_key, time_stamp_creation) values (%s, %s, %s)",
-                             (user_id, KeyBundle['identity_key'], datetime.datetime.now()))
+                         (user_id, KeyBundle['identity_key'], time_stamp_cr))
 
             # Inserting Signed Pre-Key
-            cur.execute("Insert into signed_pre_key (user_id, signed_pre_key, signature, time_stamp_creation) values (%s, %s, %s, %s)",
-                             (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], datetime.datetime.now()))
+            cur.execute("Insert into signed_key (user_id, signed_pre_key, signature, time_stamp_creation) values (%s, %s, %s, %s)",
+                        (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr))
 
             # Inserting One-time Pre Key
-            cur.executemany("Insert into one_time_pre_key (user_id, one_time_pre_key, time_stamp_creation) values (%s, %s, %s)",
-                             (user_id, KeyBundle['one_time_pre_key'], datetime.datetime.now()))
+            cur.executemany("Insert into onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation) values (%s, %d, %s, %s)",
+                (user_id, [(k, v) for k, v in KeyBundle['one_time_pre_key'].items()]), time_stamp_cr)
 
         except Exception as e:
             print(f"Error : {e} while saving KeyBundle")
@@ -71,7 +77,7 @@ class StorageManager:
         self.DB.pool.putconn(conn)
         return True
 
-    def LoadKeyBundle(self, user_id : str) -> dict:
+    def LoadKeyBundle(self, user_id : str) -> Dict:
         """
         This Function loads the KeyBundle from the database.
         :param user_id:
@@ -91,12 +97,12 @@ class StorageManager:
             signed_pre_key, signature = cur.fetchall()
 
             # Retrieving One_Time_Key
-            cur.execute("Select key_id, one_time_pre_key from one_time_pre_key where user_id = %s and is_used = False order by time_stamp_creation ASC limit 1 for update skip locked",
+            cur.execute("Select key_id, one_time_key from onetime_pre_key where user_id = %s and is_used = False order by time_stamp_creation ASC limit 1 for update skip locked",
                              (user_id,))
             one_time_pre_key = cur.fetchone()
             if one_time_pre_key:
                 key_id, one_time_pre_key = one_time_pre_key
-                cur.execute("Update one_time_pre_key set is_used = True where key_id = %s", (key_id,))
+                cur.execute("Update onetime_pre_key set is_used = True where key_id = %s", (key_id,))
                 conn.commit()
             else:
                 one_time_pre_key = {}
@@ -127,10 +133,13 @@ class StorageManager:
             conn = self.DB.pool.getconn
             cur = conn.cursor()
             cur.execute("Delete from identity_key where user_id = %s", (user_id,))
-            cur.execute("Delete from signed_pre_key where user_id = %s", (user_id,))
-            cur.execute("Delete from one_time_pre_key where user_id = %s", (user_id,))
+            cur.execute("Delete from signed_key where user_id = %s", (user_id,))
+            cur.execute("Delete from onetime_pre_key where user_id = %s", (user_id,))
             conn.commit()
             self.DB.pool.putconn(conn)
         except Exception as e:
-            print(f"Error : {e} while deleting KeyBundle")
+            print(f"Error : {e} while deleting KeyBundle"
+
+
+
 

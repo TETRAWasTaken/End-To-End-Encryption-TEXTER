@@ -1,18 +1,55 @@
 import os
+import psycopg2
 import queue
 import socket
 import threading
 import datetime
 import json
 import sys
+dbconnect = os.path.join('../X3DH-Async-Protocol', 'DB_connect')
+sys.path.append(dbconnect)
+import DB_connect
 
 class CACHEManager_Handler:
     def __init__(self):
         print("Initializing CACHEManager_Handler.")
+        self.db_connector = DB_connect()
         self.ACTIVEUSERS = {}
         self.USERMATCH = {}
         self.credentials = {}
+        self._lock = threading.Lock()
+        self.load_credentials()
         self.data_initiation()
+
+    def load_credentials(self):
+        """
+        Loads all user credentials from the PostgreSQL database into the in-memory
+        self.credentials dictionary.
+        """
+
+        if not self.db_connector.pool:
+            print("Database connection pool is not available. Cannot load credentials.")
+            return
+
+        conn = None
+        try:
+            conn = self.db_connector.pool.getconn()
+            with conn.cursor() as cur:
+                # Assuming a table named 'credentials' with 'username' and 'password' columns
+                cur.execute("SELECT user_id, password FROM user_info")
+                records = cur.fetchall()
+                with self._lock:
+                    self.credentials.clear()
+                    for record in records:
+                        username, password = record
+                        self.credentials[username] = password
+            print("Successfully loaded user credentials from the database.")
+        except (Exception, psycopg2.DatabaseError) as e:
+            print(f"Error loading credentials from database: {e}")
+            self.credentials = {}  # Ensure credentials cache is empty on error
+        finally:
+            if conn:
+                self.db_connector.pool.putconn(conn)
 
     def data_initiation(self):
         try:
@@ -22,14 +59,6 @@ class CACHEManager_Handler:
         except (FileNotFoundError, SyntaxError):
             print("No CACHE file found or invalid format. Creating new CACHE.")
             self.CACHE = {}  # Initialize empty CACHE if file doesn't exist
-
-        try:
-            with open("Credentials.json", "r") as f:
-                self.credentials = json.load(f)
-
-        except (FileNotFoundError, SyntaxError):
-            print("Credential Data File not found, or invalid format, Exiting...")
-            sys.exit(1)
 
         # Make sure all expected users exist in the CACHE
         for username in self.credentials.keys():
@@ -79,20 +108,46 @@ class CACHEManager_Handler:
             print(f"Error: No command queue found for {reciever}.")
             return False
 
-    def update_Credentials(self):
+    def update_Credentials(self, username, password):
+        """
+        Adds a new user credential to the database and then updates the in-memory cache.
+        This operation is thread-safe.
+        Returns True on success, False on failure.
+        """
+        if not self.db_connector.pool:
+            print("Database connection pool is not available. Cannot add credential.")
+            return False
+
+        # First, check if the user already exists in the cache to avoid a DB hit
+        with self._lock:
+            if username in self.credentials:
+                return False
+
+        conn = None
         try:
-            with open("Credentials.json", "w") as f:
-                json.dump(self.credentials, f)
-            print("Credentials updated.")
-            for username in self.credentials.keys():
-                username = username.strip('#')  # Remove # from username for CACHE key
-                if username not in self.CACHE:
-                    self.CACHE[username] = {}
-                    print(f"Added {username} to CACHE.")
-        except (FileNotFoundError, SyntaxError):
-            print("Error Occured while updating Credentials.")
-        except Exception as e:
-            print(f"Error Occured while updating Credentials: {e}")
+            conn = self.db_connector.pool.getconn()
+            with conn.cursor() as cur:
+                # Insert the new credential into the database
+                cur.execute(
+                    "INSERT INTO user_info (user_id, password) VALUES (%s, %s)",
+                    (username, password)
+                )
+                conn.commit()
+
+                # If the DB insert is successful, update the in-memory cache
+                with self._lock:
+                    self.credentials[username] = password
+
+                print(f"New user '{username}' credentials saved to database and cache.")
+                return True
+        except (Exception, psycopg2.DatabaseError) as e:
+            print(f"Error adding credential to database for user '{username}': {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                self.db_connector.pool.putconn(conn)
 
     def update_CACHE(self):
         try:

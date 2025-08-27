@@ -10,6 +10,13 @@ import cache_managment_system as CMS
 import time
 import os
 
+Keystorage = os.path.join('../X3DH-Async-Protocol', 'KeyStorage')
+Storagemanager = os.path.join('../X3DH-Async-Protocol', 'StorageManager')
+sys.path.append(Keystorage)
+sys.path.append(Storagemanager)
+import KeyStorage
+import StorageManager
+
 class Server:
     def __init__(self):
         super().__init__()
@@ -21,6 +28,7 @@ class Server:
 
     def server_initiator(self):
         self.cms = CMS.CACHEManager_Handler()
+        self.StorageManager = KeyStorage.StorageManager()
         self.credentials = self.cms.credentials
         print("Cache Management and Handler system activated")
 
@@ -72,7 +80,7 @@ class Server:
                             await websocket.send('1')
 
                             # Hand over to the threaded handler
-                            socket_handler = S.Server(websocket=websocket, cms=self.cms, loop=loop)
+                            socket_handler = S.Server(websocket=websocket, cms=self.cms, loop=loop, keyStorage=KeyStorage)
                             socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
                             socket_handler.associated_thread.daemon = True
                             socket_handler.associated_thread.start()
@@ -109,11 +117,28 @@ class Server:
                         await websocket.send('AAE')
                     else:
                         print(f"Registration successful for {user} from {addr}")
-                        self.credentials[user] = passw
+                        self.cms.update_Credentials(user, passw)
                         print(f"Updated self.credentials: {self.credentials}")
                         await websocket.send('success')
-                        self.cms.update_Credentials()
 
+                        response = await websocket.recv()
+                        if response == 'publish_keys':
+                            key_bundle = await websocket.recv()
+                            key_bundle = json.loads(key_bundle)
+                            print(f"Received key bundle from {addr}, user_id - {user}")
+
+                            try:
+                                KeyStorage.StoreUserKeyBundle(user, key_bundle["identity_key"],
+                                                              key_bundle["signed_pre_key"],
+                                                              key_bundle["signed_pre_key_signature"],
+                                                              key_bundle["one_time_pre_keys"])
+
+                                print(f"Saved keys for {user} to database")
+                                await websocket.send("keys_ok")
+                            except Exception as e:
+                                print(f"Error while saving keys for {user}: {e}")
+                                await websocket.send("keys_fail")
+                                return
                 else:
                     print(f"Unknown command '{logorreg}' from {addr}")
                     await websocket.send("Unknown command")

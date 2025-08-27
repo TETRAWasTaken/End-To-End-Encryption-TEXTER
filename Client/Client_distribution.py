@@ -1,42 +1,29 @@
-import sys
-import wx
-import threading
-import socket
-import websockets
 import asyncio
-import ssl
 import json
+import socket
+import ssl
+import sys
+import threading
+import x3dh
+import websockets
+import wx
 
 host = socket.gethostname()
 IP = "localhost"
 
-
-def enct(string):
-    key = {'a': '@', 'b': '^', 'c': '&', 'd': '*', 'e': '/', 'f': '.', 'g': '{', 'h': '}', 'i': '+', 'j': '=', 'k': '#',
-           'l': '!', 'm': '<', 'n': '_', 'o': '|', 'p': '~', 'q': '$', 'r': '%', 's': '`', 't': '(', 'u': ')', 'v': '-',
-           'w': '2', 'x': '3', 'y': '6', 'z': '8', ' ': '0'}
-    li = []
-    for i in string:
-        b = key[i]
-        li.append(b)
-    string = "".join(li)
-    return string
-
-
-def dect(string):
-    key = {'@': 'a', '^': 'b', '&': 'c', '*': 'd', '/': 'e', '.': 'f', '{': 'g', '}': 'h', '+': 'i', '=': 'j', '#': 'k',
-           '!': 'l', '<': 'm', '_': 'n', '|': 'o', '~': 'p', '$': 'q', '%': 'r', '`': 's', '(': 't', ')': 'u', '-': 'v',
-           '2': 'w', '3': 'x', '6': 'y', '8': 'z', '0': ' '}
-    li = []
-    for i in string:
-        b = key[i]
-        li.append(b)
-    string = "".join(li)
-    return string
-
-
 class LoginRegistrationFrame(wx.Frame):
+    """
+    The initial GUI frame for the application.
+    This class handles the user interface for both logging in and registering a new account.
+    It manages the connection to the server and transitions to the main chat GUI upon successful login.
+    """
     def __init__(self, parent, title):
+        """
+        Initializes the LoginRegistrationFrame.
+        Args:
+            parent: The parent window.
+            title (str): The title for the window frame.
+        """
         super().__init__(parent, title=title, size=(300, 200))
 
         self.panel = wx.Panel(self)
@@ -64,6 +51,12 @@ class LoginRegistrationFrame(wx.Frame):
         self.login_thread = None
 
     def on_login_click(self, event):
+        """
+        Event handler for the 'Login' button click.
+        It dynamically changes the UI to display username and password entry fields for logging in.
+        Args:
+            event: The wx event object.
+        """
         self.login_button.Destroy()
         self.register_button.Destroy()
         self.status_label.Destroy()
@@ -92,6 +85,12 @@ class LoginRegistrationFrame(wx.Frame):
         self.panel.Layout()
 
     def submit_login(self, event):
+        """
+        Event handler for the 'Submit' button on the login form.
+        Retrieves credentials from input fields and initiates the asynchronous login process.
+        Args:
+            event: The wx event object.
+        """
         username = self.message.GetValue()
         passw = self.message2.GetValue()
 
@@ -102,9 +101,17 @@ class LoginRegistrationFrame(wx.Frame):
         asyncio.run_coroutine_threadsafe(self.do_login(username, passw), self.loop)
 
     def reset_login(self):
+        """Resets the login form fields."""
         self.on_login_click(None)
 
     async def do_login(self, username, passw):
+        """
+        Asynchronously handles the login communication with the server.
+        Sends login credentials and processes the server's response.
+        Args:
+            username (str): The username to log in with.
+            passw (str): The password for the user.
+        """
         if not self.clientDNS_socket:
             wx.CallAfter(self.status_msg.SetLabel, "Not connected to server.")
             return
@@ -126,11 +133,23 @@ class LoginRegistrationFrame(wx.Frame):
             wx.CallAfter(self.status_msg.SetLabel, "An error occurred during login.")
 
     def on_login_success(self, username):
+        """
+        Handles the successful login event.
+        Destroys the current login panel and initializes the main TextMessagingGUI.
+        Args:
+            username (str): The username of the logged-in user.
+        """
         self.panel.Destroy()
         TextMessagingGUI(username=username, loop=self.loop, server_socket=self.clientDNS_socket)
         self.Show(False)
 
     def on_register_click(self, event):
+        """
+        Event handler for the 'Register' button click.
+        It dynamically changes the UI to display username and password entry fields for registration.
+        Args:
+            event: The wx event object.
+        """
         self.login_button.Destroy()
         self.register_button.Destroy()
         self.status_label.Destroy()
@@ -159,6 +178,12 @@ class LoginRegistrationFrame(wx.Frame):
         self.panel.Layout()
 
     def submit_registration(self, event):
+        """
+        Event handler for the 'Submit' button on the registration form.
+        Retrieves new user credentials and initiates the asynchronous registration process.
+        Args:
+            event: The wx event object.
+        """
         username = self.message.GetValue()
         passw = self.message2.GetValue()
 
@@ -169,6 +194,13 @@ class LoginRegistrationFrame(wx.Frame):
         asyncio.run_coroutine_threadsafe(self.do_registration(username, passw), self.loop)
 
     async def do_registration(self, username, passw):
+        """
+        Asynchronously handles the registration communication with the server.
+        Sends new account details and processes the server's response.
+        Args:
+            username (str): The new username to register.
+            passw (str): The password for the new account.
+        """
         if not self.clientDNS_socket:
             wx.CallAfter(self.status_msg.SetLabel, "Not connected to server.")
             return
@@ -179,7 +211,23 @@ class LoginRegistrationFrame(wx.Frame):
             response = await self.clientDNS_socket.recv()
 
             if response == 'success':
-                wx.CallAfter(self.on_registration_success)
+                try:
+                    alice = x3dh.X3DH(username)
+                    key_bundle = alice.generate_key_bundle()
+
+                    await self.clientDNS_socket.send('publish_keys')
+                    await self.clientDNS_socket.send(json.dumps(key_bundle))
+
+                    bundle_response = await self.clientDNS_socket.recv()
+                    if bundle_response == 'keys_ok':
+                        wx.CallAfter(self.on_registration_success)
+                    else:
+                        wx.CallAfter(self.status_msg.SetLabel, "Registration OK, Key publishing failed")
+
+                except Exception as e:
+                    print(f"Registration failed: {e}")
+                    wx.CallAfter(self.status_msg.SetLabel, "An error occurred during registration.")
+
             elif response == 'AAE':
                 wx.CallAfter(self.status_msg.SetLabel, "Username already exists.")
             else:
@@ -189,6 +237,10 @@ class LoginRegistrationFrame(wx.Frame):
             wx.CallAfter(self.status_msg.SetLabel, "An error occurred during registration.")
 
     def on_registration_success(self):
+        """
+        Handles the successful registration event.
+        Updates the UI to inform the user and provides an option to go back to the login screen.
+        """
         self.status_msg.SetLabel("Registration successful! You can now login.")
         self.back_button = wx.Button(self.panel, label="Go to Login")
         self.back_button.Bind(wx.EVT_BUTTON, self.return_to_login)
@@ -197,6 +249,12 @@ class LoginRegistrationFrame(wx.Frame):
         self.panel.Layout()
 
     def return_to_login(self, event):
+        """
+        Event handler to return to the initial login/register selection screen.
+        Clears the current UI elements and reconstructs the initial buttons.
+        Args:
+            event: The wx event object.
+        """
         self.panel.DestroyChildren()
         self.sizer.Clear()
 
@@ -211,6 +269,10 @@ class LoginRegistrationFrame(wx.Frame):
         self.panel.Layout()
 
     async def client(self):
+        """
+        Asynchronously connects to the WebSocket server using SSL.
+        It updates the UI based on the connection status and keeps the connection alive.
+        """
         uri = f"wss://{IP}:12345"
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ssl_context.load_verify_locations(cafile='server.crt')
@@ -225,20 +287,41 @@ class LoginRegistrationFrame(wx.Frame):
             wx.CallAfter(self.status_label.SetLabel, f"Connection failed: {e}")
 
     def run_async_loop(self):
+        """
+        Sets up and runs the asyncio event loop for handling network operations.
+        This method is intended to be run in a separate thread.
+        """
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.client())
 
     def start(self):
+        """
+        Starts the client's network communication in a separate thread to prevent blocking the GUI.
+        """
         self.login_thread = threading.Thread(target=self.run_async_loop)
         self.login_thread.daemon = True
         self.login_thread.start()
 
 
 class TextMessagingGUI(wx.Frame):
+    """
+    The main text messaging interface for the client.
+    This class provides the UI for chatting with other users, sending and receiving messages,
+    and managing the connection state.
+    """
 
     def __init__(self, parent=None, username="User", loop=None, server_socket=None):
+        """
+        Initializes the TextMessagingGUI.
+        Args:
+            parent: The parent window.
+            username (str): The username of the current user.
+            loop: The asyncio event loop for network operations.
+            server_socket: The active WebSocket connection to the server.
+        """
         super().__init__(parent, title=f"Text Messaging Client - {username}")
+        self.session_keys = {}
 
         self.username = username
         self.partner_username = None
@@ -287,6 +370,12 @@ class TextMessagingGUI(wx.Frame):
         self.client()
 
     def connect_to_recipient(self, event):
+        """
+        Event handler for the 'Connect' button.
+        Gets the recipient's username and initiates the connection process.
+        Args:
+            event: The wx event object.
+        """
         self.partner_username = self.recipient_entry.GetValue()
         if not self.partner_username:
             wx.MessageBox("Please enter a username to chat with", "Error", wx.OK | wx.ICON_ERROR)
@@ -295,7 +384,12 @@ class TextMessagingGUI(wx.Frame):
         asyncio.run_coroutine_threadsafe(self.do_connect(), self.loop)
 
     async def do_connect(self):
+        """
+        Asynchronously sends the local and partner usernames to the server to establish a chat session.
+        Updates the UI to enable chatting upon successful connection.
+        """
         try:
+            await self.client_socket.send('get_keys')
             await self.client_socket.send(self.partner_username)
             await self.client_socket.send(self.username)
 
@@ -311,12 +405,23 @@ class TextMessagingGUI(wx.Frame):
             wx.CallAfter(self.status_bar.SetLabelText, "Connection Error")
 
     def send(self, event):
+        """
+        Event handler for sending a message (via button click or Enter key).
+        Retrieves text from the input field and calls the async send method.
+        Args:
+            event: The wx event object.
+        """
         txt = self.message_entry.GetValue()
         if txt:
             asyncio.run_coroutine_threadsafe(self.do_send(txt), self.loop)
             self.message_entry.Clear()
 
     async def do_send(self, txt):
+        """
+        Asynchronously sends an encrypted message to the server.
+        Args:
+            txt (str): The plain text message to be encrypted and sent.
+        """
         try:
             encrypted_txt = enct(txt)
             await self.client_socket.send(encrypted_txt)
@@ -327,6 +432,10 @@ class TextMessagingGUI(wx.Frame):
 
 
     async def prompt(self):
+        """
+        The main asynchronous loop for receiving messages from the server.
+        Listens on the socket, decrypts incoming data, and updates the chat history.
+        """
         while self.client_socket:
             try:
                 received_data = await self.client_socket.recv()
@@ -347,6 +456,10 @@ class TextMessagingGUI(wx.Frame):
                 break
 
     def client(self):
+        """
+        Initializes the client's state upon GUI creation.
+        Updates the UI to show connection status and starts the message receiving loop.
+        """
         if self.client_socket:
             self.status_bar.SetLabelText('Connected to server')
             self.chat_history.AppendText("Connected to server. Enter a username to chat with.\n")
@@ -357,6 +470,11 @@ class TextMessagingGUI(wx.Frame):
 
 
 if __name__ == '__main__':
+    """
+    Main entry point for the application.
+    Initializes the wx.App, creates the LoginRegistrationFrame, starts the networking
+    thread, and enters the wxPython main event loop.
+    """
     try:
         app = wx.App(False)
         frame = LoginRegistrationFrame(None, "Login or Register")

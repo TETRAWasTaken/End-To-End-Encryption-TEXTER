@@ -1,6 +1,4 @@
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Union
-import cryptography
+from typing import Optional, Tuple
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -13,8 +11,8 @@ import os
 ROOT_KEY_LEN = 32
 CHAIN_KEY_LEN = 32
 MESSAGE_KEY_LEN = 32
-AES_GCM_NONCE_LEN = 96
-AES_GCM_TAG_LEN = 128
+AES_GCM_NONCE_BYTES = 12  # 96 bits
+AES_GCM_TAG_BYTES = 16  # 128 bits
 HKDF_HASH_ALGORITHM = hashes.SHA256()
 
 
@@ -48,14 +46,14 @@ class EncryptionUtil():
         :return: The derived key.
         """
         hkdf = HKDF(algorithm=HKDF_HASH_ALGORITHM,
-                    length=CHAIN_KEY_LENGTH,
+                    length=CHAIN_KEY_LEN,
                     salt=salt,
                     info=info,
                     backend=default_backend()
                     )
         return hkdf.derive(key)
 
-    def encrypt_aes_gcm(key: bytes, plaintext: bytes, associated_data: Optional[bytes] = None) -> Tuple[
+    def encrypt_aes_gcm(self, key: bytes, plaintext: bytes, associated_data: Optional[bytes] = None) -> Tuple[
         bytes, bytes, bytes]:
         """
         Encrypts plaintext using AES-256-GCM.
@@ -64,7 +62,7 @@ class EncryptionUtil():
         :param associated_data: Additional data to authenticate.
         :return: A tuple containing ciphertext, nonce, and tag.
         """
-        nonce = os.urandom(AES_GCM_NONCE_LEN)
+        nonce = os.urandom(AES_GCM_NONCE_BYTES)
         cipher = Cipher(algorithms.AES(key), modes.GCM(nonce), backend=default_backend())
         encryptor = cipher.encryptor()
         if associated_data:
@@ -73,7 +71,7 @@ class EncryptionUtil():
         tag = encryptor.tag
         return ciphertext, nonce, tag
 
-    def decrypt_aes_gcm(key: bytes, ciphertext: bytes, nonce: bytes, tag: bytes,
+    def decrypt_aes_gcm(self, key: bytes, ciphertext: bytes, nonce: bytes, tag: bytes,
                         associated_data: Optional[bytes] = None) -> bytes:
         """
         Decrypts ciphertext using AES-256-GCM.
@@ -90,5 +88,3 @@ class EncryptionUtil():
         if associated_data:
             decryptor.authenticate_additional_data(associated_data)
         return decryptor.update(ciphertext) + decryptor.finalize()
-
-
