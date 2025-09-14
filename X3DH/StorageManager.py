@@ -1,6 +1,6 @@
 import queue
 
-import DB_connect as DBC
+from X3DH import DB_connect as DB
 import datetime
 from typing import List, Dict, Optional, Callable
 
@@ -15,7 +15,7 @@ class StorageManager:
     This class acts as an API for the database querying and prevents SQL vulnerabilities
     by seperating all the queryies in this class and keeping them injection safe
     """
-    def __init__(self, DB : DBC.DB_connect) -> None:
+    def __init__(self, DB : DB.DB_connect) -> None:
         try:
             self.DB = DB
         except Exception as e:

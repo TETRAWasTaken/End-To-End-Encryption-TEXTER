@@ -10,19 +10,12 @@ import cache_managment_system as CMS
 import time
 import os
 
-Keystorage = os.path.join('../X3DH-Async-Protocol', 'KeyStorage')
-Storagemanager = os.path.join('../X3DH-Async-Protocol', 'StorageManager')
-Dbconnect = os.path.join('../X3DH-Async-Protocol', 'DB_connect')
-sys.path.append(Dbconnect)
-sys.path.append(Keystorage)
-sys.path.append(Storagemanager)
-import KeyStorage
-import StorageManager
-import DB_connect
+from X3DH import StorageManager
+from X3DH import KeyStorage
+from X3DH import DB_connect
 
 class Server:
     def __init__(self):
-        super().__init__()
         self.ssl_context = None
         self.host = '::1'
         self.users = []
@@ -31,8 +24,8 @@ class Server:
 
     def server_initiator(self):
         self.DB = DB_connect.DB_connect()
-        self.cms = CMS.CACHEManager_Handler()
-        self.StorageManager = KeyStorage.StorageManager()
+        self.cms = CMS.CACHEManager_Handler(self.DB)
+        self.StorageManager = StorageManager.StorageManager(self.DB)
         self.credentials = self.cms.credentials
         print("Cache Management and Handler system activated")
 

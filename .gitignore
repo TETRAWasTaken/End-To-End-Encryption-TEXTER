@@ -5,7 +5,7 @@
 .venv
 .server.crt
 .server.key
-X3DH-Async-Protocol/database.ini
+database.ini
 .idea/inspectionProfiles/profiles_settings.xml
 .idea/misc.xml
 .idea/vcs.xml

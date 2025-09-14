@@ -6,8 +6,8 @@ import time
 from typing import Optional, Callable
 import cache_managment_system as CMS
 import sys
-sys.path.append('../X3DH-Async-Protocol')
-import KeyStorage
+
+from X3DH import KeyStorage
 
 
 class Server:

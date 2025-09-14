@@ -6,20 +6,33 @@ import threading
 import datetime
 import json
 import sys
-dbconnect = os.path.join('../X3DH-Async-Protocol', 'DB_connect')
-sys.path.append(dbconnect)
-import DB_connect
+
+from X3DH import DB_connect as DB
 
 class CACHEManager_Handler:
-    def __init__(self):
+    def __init__(self, DB: DB.DB_connect):
         print("Initializing CACHEManager_Handler.")
-        self.db_connector = DB_connect()
+        self.db_connector = DB
         self.ACTIVEUSERS = {}
         self.USERMATCH = {}
         self.credentials = {}
         self._lock = threading.Lock()
         self.load_credentials()
         self.data_initiation()
+
+    def payload(self, status: str, message: str) -> json.dumps:
+        """
+        Describes the general payload of each message sent between Server and Client
+        :param status: The basic code of sent message, can be "error", "ok"
+        :param message: The extra details that needs to be sent
+        :return payload: A JSON object containing the status and message
+        """
+
+        payload = {
+            "status": status,
+            "message": message
+        }
+        return json.dumps(payload)
 
     def load_credentials(self):
         """
