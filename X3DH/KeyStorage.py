@@ -14,8 +14,8 @@ class KeyStorage:
     """
     This class is meant for retrieval and manipulation of file storage
     """
-    def __init__(self, storageManager: StorageManager.StorageManager):
-        self.StorageManager= StorageManager
+    def __init__(self, storagemanager: StorageManager.StorageManager):
+        self.StorageManager= storagemanager
 
     def StoreUserKeyBundle(self, user_id: str,
                            identity_key: x25519.X25519PublicKey,

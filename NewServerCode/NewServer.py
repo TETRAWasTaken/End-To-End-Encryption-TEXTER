@@ -14,6 +14,7 @@ from X3DH import KeyStorage
 from X3DH import DB_connect
 
 from Server import cache_managment_system as CMS
+from Server import Socket
 
 
 class Server:
@@ -23,6 +24,7 @@ class Server:
         self.CMS = None
         self.StorageManager = None
         self.KeyStorage = None
+        self.authandkeyhandler = None
         self.ssl_context = None
         self.host = '::1'
         self.UTC_Thread = None
@@ -55,12 +57,21 @@ class Server:
         self.DB = DB_connect.DB_connect()
         self.CMS = CMS.CACHEManager_Handler(self.DB)
         self.StorageManager = StorageManager.StorageManager(self.DB)
+        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.CMS, self.KeyStorage)
         print("Database connection established.")
 
         self.UTC_Thread = threading.Thread(target = self.user_thread_checker)
         self.UTC_Thread.daemon = True
         self.UTC_Thread.start()
 
+        try:
+            asyncio.run(self.start_server())
+        except KeyboardInterrupt:
+            print("Exiting...")
+            sys.exit(1)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            sys.exit(1)
 
     async def start_server(self) -> None:
         """
@@ -71,17 +82,28 @@ class Server:
         loop = asyncio.get_running_loop()
         print(f"Starting WebSocket server on {self.host}:12345 with SSL enabled. Waiting for connections...")
         async with websockets.serve(
-            lambda websockets: self.authenticator(websockets, loop),
+            lambda websockets: self.authenticator(websockets),
             self.host,
             port = os.environ.get('PORT', 12345),
             ssl=self.ssl_context,
         ):
             await asyncio.Future()
 
-    async def authenticator(self, websocket, loop) -> None:
-
-
-
+    async def authenticator(self, websocket) -> None:
+        """
+        Wrapper that delegates the connection to AuthenticatorHandlerAndKeyHandler
+        :param websocket: websocket connection instance of the client
+        :return: None
+        """
+        loop = asyncio.get_running_loop()
+        if await self.authandkeyhandler.handle_authentication(websocket, loop):
+            socket_handler = Socket.Server(websocket=websocket, cms=self.CMS, loop=loop)
+            socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
+            socket_handler.associated_thread.daemon = True
+            socket_handler.associated_thread.start()
+        else:
+            await websocket.send((self.CMS.payload("error", "Authentication Failed")))
+            await websocket.close()
 
     def user_thread_checker(self) -> None:
         while True:
@@ -100,9 +122,5 @@ class Server:
             except Exception as e:
                 print(f"Error : {e}")
 
-
-
-
-
-
-
+if __name__=="__main__":
+    server = Server()
