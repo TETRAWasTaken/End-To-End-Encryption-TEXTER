@@ -5,7 +5,6 @@ import threading
 import time
 from typing import Optional, Callable
 from . import cache_managment_system as CMS
-import sys
 
 from X3DH import KeyStorage
 

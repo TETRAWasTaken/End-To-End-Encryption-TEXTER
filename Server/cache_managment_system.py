@@ -1,11 +1,8 @@
-import os
 import psycopg2
 import queue
-import socket
 import threading
 import datetime
 import json
-import sys
 
 from X3DH import DB_connect as DB
 

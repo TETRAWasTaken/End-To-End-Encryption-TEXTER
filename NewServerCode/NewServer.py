@@ -106,6 +106,10 @@ class Server:
             await websocket.close()
 
     def user_thread_checker(self) -> None:
+        """
+        Continuously checks user_thread to see if the user is still connected or not.
+        :return None:
+        """
         while True:
             try:
                 for i in list(self.CMS.ACTIVEUSERS.keys()):
