@@ -138,6 +138,6 @@ class StorageManager:
         except Exception as e:
             print(f"Error : {e} while deleting KeyBundle")
 
-
+    def Check_Session(self, user_one: str, user_two: str) -> bool:
 
 

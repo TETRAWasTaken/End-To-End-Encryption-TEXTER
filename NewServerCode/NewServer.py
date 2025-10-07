@@ -1,27 +1,29 @@
 import asyncio
-import json
 import ssl
 import websockets
 import sys
 import threading
 import time
 import os
-import colorama
 import Authenticator
 
 from X3DH import StorageManager
-from X3DH import KeyStorage
 from X3DH import DB_connect
 
-from Server import cache_managment_system as CMS
-from Server import Socket
+from NewServerCode import Socket
+from NewServerCode import caching
 
+"""
+The main Server which would also work as the Load_Balancer for the system,
+handling all the important task and managing the database as well.
+"""
 
 class Server:
     def __init__(self):
         # Objects
         self.DB = None
-        self.CMS = None
+        self.cacheDB = None
+        self.caching = None
         self.StorageManager = None
         self.KeyStorage = None
         self.authandkeyhandler = None
@@ -55,9 +57,10 @@ class Server:
         :return: None
         """
         self.DB = DB_connect.DB_connect()
-        self.CMS = CMS.CACHEManager_Handler(self.DB)
+        self.cacheDB = DB_connect.DB_connect()
+        self.caching = caching.caching(self.DB, self.cacheDB)
         self.StorageManager = StorageManager.StorageManager(self.DB)
-        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.CMS, self.KeyStorage)
+        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.KeyStorage)
         print("Database connection established.")
 
         self.UTC_Thread = threading.Thread(target = self.user_thread_checker)
@@ -97,12 +100,14 @@ class Server:
         """
         loop = asyncio.get_running_loop()
         if await self.authandkeyhandler.handle_authentication(websocket, loop):
-            socket_handler = Socket.Server(websocket=websocket, cms=self.CMS, loop=loop)
+            socket_handler = Socket.Server(websocket=websocket, caching=self.caching, loop=loop)
             socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
             socket_handler.associated_thread.daemon = True
             socket_handler.associated_thread.start()
+            self.caching.ACTIVEUSERS[websocket][1].append(socket_handler)
+
         else:
-            await websocket.send((self.CMS.payload("error", "Authentication Failed")))
+            await websocket.send((self.caching.payload("error", "Authentication Failed")))
             await websocket.close()
 
     def user_thread_checker(self) -> None:
@@ -112,13 +117,12 @@ class Server:
         """
         while True:
             try:
-                for i in list(self.CMS.ACTIVEUSERS.keys()):
-                    socket_handler_instance = self.CMS.ACTIVEUSERS[i]
+                for i in list(self.caching.ACTIVEUSERS.keys()):
+                    socket_handler_instance = self.caching.ACTIVEUSERS[i][1]
                     if not socket_handler_instance.associated_thread.is_alive():
                         socket_handler_instance.associated_thread.join(timeout=1.0)
-                        self.CMS.del_user_Match(i)
                         print(f"User {i} has been disconnected and all threads are cleared.")
-                        del self.CMS.ACTIVEUSERS[i]
+                        del self.caching.ACTIVEUSERS[i]
                 time.sleep(5)
             except (RuntimeError, KeyError) as e:
                 print(f"Error in user_thread_checker: {e}")

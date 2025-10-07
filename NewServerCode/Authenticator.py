@@ -5,21 +5,21 @@ from typing import Any, Coroutine
 import websockets
 import json
 import asyncio
-from Server import cache_managment_system
+from NewServerCode import caching
 from X3DH import KeyStorage
 
 class AuthenticatorAndKeyHandler:
-    def __init__(self, cms: cache_managment_system.CACHEManager_Handler,
+    def __init__(self, caching: caching.caching,
                  keystorage: KeyStorage.KeyStorage) -> None:
         """
         Initializes the authenticator.
-        :param cms: The cache management system instance
+        :param caching: The cache management system instance
         :param keystorage: The key storage instance
         """
-        self.CMS = cms
+        self.caching = caching
         self.KeyStorage = keystorage
 
-    async def handle_authentication(self, websocket: websockets,
+    async def handle_authentication(self, websocket,
                                     loop: asyncio.get_running_loop) -> bool | None:
         """
         Handle the authentication of the client
@@ -40,22 +40,23 @@ class AuthenticatorAndKeyHandler:
                     passw = cred["password"]
 
                     if not user or not passw:
-                        await websocket.send(self.CMS.payload("error", "Invalid format"))
+                        await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
 
                     try:
-                        if self.CMS.credentials[user] == passw:
-                            await websocket.send(self.CMS.payload("ok", "success"))
+                        if self.caching.check_credentials(user, passw):
+                            await websocket.send(self.caching.payload("ok", "success"))
                             authenticated_and_handled = True
+                            self.caching.ACTIVEUSERS[websocket] = [user]
                             return True
 
                         else:
                             print(f"Credentials don't match for client {websocket.remote_address}")
-                            await websocket.send(self.CMS.payload("error", "Credfail"))
+                            await websocket.send(self.caching.payload("error", "Credfail"))
 
                     except KeyError:
                         print(f"Account not found for {user if user else 'unknown'}")
-                        await websocket.send(self.CMS.payload("error", "NAF"))
+                        await websocket.send(self.caching.payload("error", "NAF"))
 
                 elif command == "reg":
                     print(f"Registration requested by {websocket.remote_address}")
@@ -65,15 +66,15 @@ class AuthenticatorAndKeyHandler:
                     passw = cred["password"]
 
                     if not user or not passw:
-                        await websocket.send(self.CMS.payload("error", "Invalid format"))
+                        await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
 
-                    if user in self.CMS.credentials:
-                        await websocket.send(self.CMS.payload("error", "AAE"))
+                    if self.caching.check_credentials(user):
+                        await websocket.send(self.caching.payload("error", "AAE"))
                         print(f"Registration failed, username {user} already exists")
                     else:
-                        self.CMS.update_Credentials(user, passw)
-                        await websocket.send(self.CMS.payload("ok", "Registration Successful"))
+                        self.caching.insert_credentials(user, passw)
+                        await websocket.send(self.caching.payload("ok", "Registration Successful"))
                         print(f"Registration successful for {user} from {websocket.remote_address}")
 
                         response = await websocket.recv()
@@ -87,17 +88,17 @@ class AuthenticatorAndKeyHandler:
                                                               key_bundle["signed_pre_key_signature"],
                                                               key_bundle["one_time_pre_key"]):
                                 print(f"Saved keys for {user} to database")
-                                await websocket.send(self.CMS.payload("ok", "keys_ok"))
+                                await websocket.send(self.caching.payload("ok", "keys_ok"))
                             else:
                                 print(f"Error while saving keys for {user}")
-                                await websocket.send(self.CMS.payload("error", "keys_fail"))
+                                await websocket.send(self.caching.payload("error", "keys_fail"))
 
                         else:
                             print(f"Unknown command '{response}' from {websocket.remote_address}")
-                            await websocket.send(self.CMS.payload("error", "Unknown command"))
+                            await websocket.send(self.caching.payload("error", "Unknown command"))
                 else:
                     print(f"Unknown command '{command}' from {websocket.remote_address}")
-                    await websocket.send(self.CMS.payload("error", "Unknown command"))
+                    await websocket.send(self.caching.payload("error", "Unknown command"))
 
         except websockets.exceptions.ConnectionClosed:
             print(f"Connection from {websocket.remote_address} closed during authentication.")
