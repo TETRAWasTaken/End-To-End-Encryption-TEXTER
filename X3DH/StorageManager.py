@@ -1,8 +1,6 @@
-import queue
-
 from X3DH import DB_connect as DB
 import datetime
-from typing import List, Dict, Optional, Callable
+from typing import Dict
 
 """
 This class is meant for retrieval and manipulation of file storage
@@ -27,21 +25,27 @@ class StorageManager:
         :param user_id:
         :return:
         """
+        conn = None
+        cur = None
         try:
-            conn = self.DB.pool.getconn
+            conn = self.DB.pool.getconn()
             cur = conn.cursor()
-
-            cur.execute("Select exists (select user_id from User_Info where user_id = %s)",
-                                            (user_id,))
-            if cur.fetchone()[0]:
-                self.DB.pool.putconn(conn)
-                return True
-            else:
-                self.DB.pool.putconn(conn)
-                return False
+            cur.execute(
+                "SELECT EXISTS (SELECT 1 FROM User_Info WHERE user_id = %s)",
+                (user_id,),
+            )
+            exists = cur.fetchone()[0]
+            return bool(exists)
         except Exception as e:
             print(f"Error : {e} while checking User")
             return False
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
 
     def SaveKeyBundle(self, KeyBundle: dict, user_id : str) -> bool:
         """
@@ -50,76 +54,124 @@ class StorageManager:
         :param user_id:
         :return:
         """
+        conn = None
+        cur = None
         try:
-            conn = self.DB.pool.getconn
+            conn = self.DB.pool.getconn()
             cur = conn.cursor()
 
             time_stamp_cr = datetime.datetime.now()
             # Inserting Identity Key
-            cur.execute("Insert into identity_key (user_id, identity_key, time_stamp_creation) values (%s, %s, %s)",
-                         (user_id, KeyBundle['identity_key'], time_stamp_cr))
+            cur.execute(
+                "INSERT INTO identity_key (user_id, identity_key, time_stamp_creation) VALUES (%s, %s, %s)",
+                (user_id, KeyBundle['identity_key'], time_stamp_cr),
+            )
 
             # Inserting Signed Pre-Key
-            cur.execute("Insert into signed_key (user_id, signed_pre_key, signature, time_stamp_creation) values (%s, %s, %s, %s)",
-                        (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr))
+            cur.execute(
+                "INSERT INTO signed_key (user_id, signed_pre_key, signature, time_stamp_creation) VALUES (%s, %s, %s, %s)",
+                (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr),
+            )
 
-            # Inserting One-time Pre Key
-            cur.executemany("Insert into onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation) values (%s, %d, %s, %s)",
-                (user_id, [(k, v) for k, v in KeyBundle['one_time_pre_key'].items()]), time_stamp_cr)
+            # Inserting One-time Pre Keys (executemany expects an iterable of tuples)
+            one_time_rows = [
+                (user_id, int(k), v, time_stamp_cr)
+                for k, v in KeyBundle['one_time_pre_key'].items()
+            ]
+            if one_time_rows:
+                cur.executemany(
+                    "INSERT INTO onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation) VALUES (%s, %s, %s, %s)",
+                    one_time_rows,
+                )
 
+            conn.commit()
+            return True
         except Exception as e:
+            if conn is not None:
+                conn.rollback()
             print(f"Error : {e} while saving KeyBundle")
             return False
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
 
-        conn.commit()
-        self.DB.pool.putconn(conn)
-        return True
-
-    def LoadKeyBundle(self, user_id : str) -> Dict:
+    def LoadKeyBundle(self, user_id: str) -> Dict:
         """
         This Function loads the KeyBundle from the database.
         :param user_id:
         :return: KeyBundle : dict
         """
+        conn = None
+        cur = None
         try:
-            conn = self.DB.pool.getconn
+            conn = self.DB.pool.getconn()
             cur = conn.cursor()
             # Retrieving Identity Key
             cur.execute("Select identity_key from identity_key where user_id = %s",
-                             (user_id,))
+                        (user_id,))
             identity_key = cur.fetchone()[0]
 
             # Retrieving Signed_Pre_Key and Signature
-            cur.execute("Select signed_pre_key, signature from signed_key where user_id = %s",
-                             (user_id,))
-            signed_pre_key, signature = cur.fetchall()
+            cur.execute(
+                "SELECT signed_pre_key, signature FROM signed_key WHERE user_id = %s ORDER BY time_stamp_creation DESC LIMIT 1",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return {}
+            signed_pre_key, signature = row
 
-            # Retrieving One_Time_Key
-            cur.execute("Select key_id, one_time_key from onetime_pre_key where user_id = %s and is_used = False order by time_stamp_creation ASC limit 1 for update skip locked",
-                             (user_id,))
-            one_time_pre_key = cur.fetchone()
-            if one_time_pre_key:
-                key_id, one_time_pre_key = one_time_pre_key
-                cur.execute("Update onetime_pre_key set is_used = True where key_id = %s", (key_id,))
-                conn.commit()
-            else:
-                one_time_pre_key = {}
+            # Retrieve one available One-Time Key with lock, and mark it used
+            cur.execute(
+                """
+                SELECT key_id, one_time_key
+                FROM onetime_pre_key
+                WHERE user_id = %s
+                  AND is_used = FALSE
+                ORDER BY time_stamp_creation
+                    FOR UPDATE SKIP LOCKED
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            otk_row = cur.fetchone()
+            one_time_pre_key = None
+            one_time_key_id = None
+            if otk_row:
+                one_time_key_id, one_time_pre_key = otk_row
+                cur.execute(
+                    "UPDATE onetime_pre_key SET is_used = TRUE WHERE key_id = %s",
+                    (one_time_key_id,),
+                )
 
-            KeyBundle = {"identity_key":identity_key,
-                         "signed_pre_key":signed_pre_key,
-                         "signature":signature,
-                         "one_time_pre_key":one_time_pre_key,
-                         "user_id":user_id,
-                         "one_time_key_id":key_id
-                         }
+            # Commit the transaction so the is_used flag is persisted atomically with the selection
+            conn.commit()
 
-            self.DB.pool.putconn(conn)
-            return KeyBundle
-
+            return {
+                "identity_key": identity_key,
+                "signed_pre_key": signed_pre_key,
+                "signature": signature,
+                "one_time_pre_key": one_time_pre_key if one_time_pre_key is not None else {},
+                "user_id": user_id,
+                "one_time_key_id": one_time_key_id,
+            }
         except Exception as e:
+            if conn is not None:
+                conn.rollback()
             print(f"Error : {e} while loading KeyBundle")
-            self.DB.pool.putconn(conn)
             return {}
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
 
     def DeleteKeyBundle(self, user_id : str) -> None:
         """
@@ -137,7 +189,5 @@ class StorageManager:
             self.DB.pool.putconn(conn)
         except Exception as e:
             print(f"Error : {e} while deleting KeyBundle")
-
-    def Check_Session(self, user_one: str, user_two: str) -> bool:
 
 

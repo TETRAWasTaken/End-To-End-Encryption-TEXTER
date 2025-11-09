@@ -199,3 +199,4 @@ class caching:
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
 
+    def
