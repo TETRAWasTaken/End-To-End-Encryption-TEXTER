@@ -32,7 +32,7 @@ class NetworkService(QObject):
         self.host_uri = host_uri
         self.myself = myself
         self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        self.ssl_context.load_verify_locations(cafile='server.crt')
+        self.ssl_context.load_verify_locations(cafile='Client/services/server.crt')
 
     @staticmethod
     def payload(status: str, message: str | dict) -> json.dumps:
