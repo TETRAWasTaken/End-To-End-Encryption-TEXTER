@@ -110,4 +110,3 @@ class AuthenticatorAndKeyHandler:
             if not authenticated_and_handled:
                 await websocket.close()
                 return False
-

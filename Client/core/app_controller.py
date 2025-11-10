@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Slot, Signal
 import asyncio
 from Client.gui.login_window import LoginWindow
 from Client.gui.chat_window import ChatWindow
@@ -112,9 +112,14 @@ class AppController(QObject):
                 print("Received chat message but no chat view is active.")
 
         elif status == "User_Select":
-            if self.chat_view:
-                self.chat_view.set_status(f"User status: {message}")
-            print(f"User Status: {message}")
+            if message == "User Available":
+                if self.chat_view:
+                    self.chat_view.set_status("User is available", "green")
+                print(f"User Status: {message}")
+            elif message == "User Not Available":
+                if self.chat_view:
+                    self.chat_view.set_status("User not available", "red")
+                print(f"User Status: {message}")
 
 
     # Slots for GUI Signals

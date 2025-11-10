@@ -55,7 +55,7 @@ class caching:
         else:
             return False
 
-    def check_credentials(self, user_id: str, *password: str):
+    def check_credentials(self, user_id: str, *password: str) -> bool:
         """
         Queries the database to check for the existence of the user in the registered
         user database.
@@ -177,7 +177,7 @@ class caching:
             if conn:
                 self.cacheDB.pool.putconn(conn)
 
-    def send_text(self, sender_id: str, receiver_id: str, text: bytes) -> bool:
+    def send_text(self, sender_id: str, receiver_id: str, text: bytes, *cache: bool) -> bool:
         """
         Redirect the text to the receiver.
         :param sender_id:
@@ -186,15 +186,54 @@ class caching:
         :return bool:
         """
         try:
-            socket = self.check_ACTIVEUSER(receiver_id)
-            if socket:
-                command_payload = {'method': 'send_text', 'args': self.message_payload(self, sender_id, receiver_id, text)}
-                self.ACTIVEUSERS[socket][1].command_queue.put(command_payload)
-                self.insert_into_textcache(text, sender_id, receiver_id, True)
-                return True
+            if not cache:
+                socket = self.check_ACTIVEUSER(receiver_id)
+                if socket:
+                    command_payload = {'method': 'send_text',
+                                       'args': self.message_payload(self, sender_id, receiver_id, text)}
+                    self.ACTIVEUSERS[socket][1].command_queue.put(command_payload)
+                    self.insert_into_textcache(text, sender_id, receiver_id, True)
+                    return True
+                else:
+                    self.insert_into_textcache(text, sender_id, receiver_id)
+                    return False
             else:
-                self.insert_into_textcache(text, sender_id, receiver_id)
-                return False
+                socket = self.check_ACTIVEUSER(receiver_id)
+                if socket:
+                    command_payload = {'method': 'send_text',
+                                       'args': self.message_payload(self, sender_id, receiver_id, text)}
+                    self.ACTIVEUSERS[socket][1].command_queue.put(command_payload)
+                    return True
+                else:
+                    return False
 
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
+
+    def retrieve_text_cache(self, sender_id: str, receiver_id: str):
+        """
+        Retrieve the text cache from the database.
+        and pushes the text to the client.
+        """
+        try:
+            conn = self.cacheDB.pool.getconn()
+            with conn.cursor() as cur:
+                cur.execute("SELECT text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = %s ORDER BY time_stamp_creation DESC",
+                            (receiver_id, sender_id, False))
+                result = cur.fetchall()
+
+            if result:
+                for i in result:
+                    if self.send_text(sender_id, receiver_id, i[0]):
+                        cur.execute("UPDATE text_cache SET flag = %s, time_stamp_last_usage = %s WHERE time_stamp_creation = %s AND text_cache = %s",
+                                    (True, datetime.datetime.now(), i[1], i[0]))
+                    else:
+                        print("Error while sending text to client.")
+
+            else:
+                print("No text found in cache.")
+
+        except Exception as e:
+            print(f"Error in caching.retrieve_text_cache: {e}")
+
+

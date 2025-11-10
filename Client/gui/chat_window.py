@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
                                QTextEdit, QLineEdit, QPushButton,
                                QSplitter, QListWidget, QLabel, QHBoxLayout)
 from PySide6.QtCore import Slot, Signal, Qt
+from Client.core.app_controller import AppController
 
 class ChatWindow(QMainWindow):
     """
@@ -27,6 +28,7 @@ class ChatWindow(QMainWindow):
         self.message_input.setPlaceholderText("Type a message...")
 
         self.send_btn = QPushButton("Send")
+        self.status_label = QLabel()
 
         # Layout
         # Contacts Panel
@@ -38,6 +40,7 @@ class ChatWindow(QMainWindow):
         # Chat Panel
         chat_panel = QWidget()
         chat_layout = QVBoxLayout(chat_panel)
+        chat_layout.addWidget(self.status_label)
         chat_layout.addWidget(self.chat_history, 1)
 
         input_layout = QHBoxLayout()
@@ -61,7 +64,8 @@ class ChatWindow(QMainWindow):
         # Contact List Items
         #TODO Add contact list people in the contact list
 
-    def on_send_click(self):
+
+    def on_send_message_click(self):
         text = self.message_input.text()
         if text and self.current_partner:
             self.send_message_requested.emit(text, self.current_partner)
@@ -72,10 +76,13 @@ class ChatWindow(QMainWindow):
         if current:
             self.current_partner = current.text()
             self.chat_history.clear()
-            self.chat_history.append(f"<b>{self.current_partner}</b> is online.")
+            self.set_status(f"Checking availability of {self.current_partner}...", "blue")
             self.partner_selected.emit(self.current_partner)
-
 
     @Slot(str, str)
     def add_message(self, sender: str, text: str):
         self.chat_history.append(f"<b>{sender}:</b> {text}")
+
+    def set_status(self, text: str, color: str = "black"):
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}")
