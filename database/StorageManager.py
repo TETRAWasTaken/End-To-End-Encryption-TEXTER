@@ -1,4 +1,4 @@
-from X3DH import DB_connect as DB
+from database import DB_connect as DB
 import datetime
 from typing import Dict
 

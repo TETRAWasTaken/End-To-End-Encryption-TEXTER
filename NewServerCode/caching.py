@@ -4,7 +4,7 @@ import datetime
 import psycopg2
 import json
 
-from X3DH import DB_connect
+from database import DB_connect
 
 
 class caching:
@@ -198,5 +198,3 @@ class caching:
 
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
-
-    def

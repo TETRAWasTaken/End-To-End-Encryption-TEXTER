@@ -7,8 +7,8 @@ import time
 import os
 import Authenticator
 
-from X3DH import StorageManager
-from X3DH import DB_connect
+from database import StorageManager
+from database import DB_connect
 
 from NewServerCode import Socket
 from NewServerCode import caching

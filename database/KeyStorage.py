@@ -3,7 +3,7 @@ import threading
 from typing import Dict, List, Optional, Tuple, Union
 from cryptography.hazmat.primitives.asymmetric import x25519
 
-from X3DH import StorageManager
+from database import StorageManager
 
 """
 This is a Key storage protocol for the Server, this maintains the reliability 

@@ -6,7 +6,7 @@ import websockets
 import json
 import asyncio
 from NewServerCode import caching
-from X3DH import KeyStorage
+from database import KeyStorage
 
 class AuthenticatorAndKeyHandler:
     def __init__(self, caching: caching.caching,
