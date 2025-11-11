@@ -118,23 +118,43 @@ class AppController(QObject):
         elif status == "User_Select":
             if message == "User Available":
                 if self.chat_view:
-                    self.chat_view.set_status("User is available", "green")
+                    self.chat_view.set_status("User is available, fetching keys...", "blue")
+                    partner = self.chat_view.current_partner
+                    print(f"Requesting the key bundle of {partner}")
+                    bundle_request_payload = {
+                        "status": "request_key_bundle",
+                        "user_id": partner
+                    }
+                    self.network.send_payload(json.dumps(bundle_request_payload))
+            elif message == "User Not Online":
+                if self.chat_view:
+                    self.chat_view.set_status("User is offline. They will receive the message upon login.", "orange")
+                    partner = self.chat_view.current_partner
+                    print(f"Requesting the key bundle of {partner}")
+                    bundle_request_payload = {
+                        "status": "request_key_bundle",
+                        "user_id": partner
+                    }
+                    self.network.send_payload(json.dumps(bundle_request_payload))
             elif message == "User Not Available":
                 if self.chat_view:
                     self.chat_view.set_status("User not available", "red")
+                    self.chat_view.set_input_enabled(False)
 
         elif status == "key_bundle_ok":
-            bundle_json = message
-            partner_username = bundle_json.get("user_id")
+            partner_username = message.get("user_id")
             if partner_username and self.crypt_services and partner_username != self.username:
-                self.crypt_services.store_partner_key_bundle(partner_username, bundle_json)
+                self.crypt_services.store_partner_bundle(partner_username, message)
+                print(f"Cached and deserialized bundle for {partner_username}")
 
                 if self.chat_view and self.chat_view.current_partner == partner_username:
-                    self.chat_view.set_status(f"Ready too chat with {partner_username}", "green")
+                    self.chat_view.set_status(f"Ready to chat with {partner_username}", "green")
+                    self.chat_view.set_input_enabled(True)
 
         elif status == "key_bundle_fail":
             if self.chat_view:
                 self.chat_view.set_status("Selected partner cannot be contacted", "red")
+                self.chat_view.set_input_enabled(False)
 
 
 
@@ -222,13 +242,6 @@ class AppController(QObject):
             "user_id": partner
         }
         self.network.send_payload(json.dumps(payload))
-
-        print(f"Requesting the key bundle of {partner}")
-        bundle_request_payload = {
-            "status": "request_key_bundle",
-            "user_id": partner
-        }
-        self.network.send_payload(json.dumps(bundle_request_payload))
 
     # Internal Logic
     def on_login_success(self):

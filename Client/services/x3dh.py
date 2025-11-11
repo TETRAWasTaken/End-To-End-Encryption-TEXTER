@@ -35,7 +35,7 @@ class X3DH:
         self.identity_key_private, ik_public = self._encryption_util.generate_x25519_key_pair()
 
         # Generate Signed Pre Key (SPK)
-        self.signed_pre_key_private, spk_public = self._encryption_util.generate_x25519_key_pair()
+        self.signed_pre_key_private, spk_public = self._encryption_util.generate_x25519_key_pair() 
 
         # Generate a signature for the SPK public
         self.signing_key_private, _ = self._encryption_util.generate_ed25519_key_pair()
@@ -53,6 +53,7 @@ class X3DH:
         public_key_bundle = {
             "identity_key": ik_public,
             "signed_pre_key": spk_public,
+            "signing_key": self.signing_key_private.public_key(), # Add public signing key
             "signed_pre_key_signature": spk_signature,
             "one_time_pre_keys": opk_public_dict
         }

@@ -107,6 +107,8 @@ class ChatWindow(QMainWindow):
             self.current_partner = partner_name
             self.chat_history.clear()
             self.set_status(f"Checking availability of {self.current_partner}...", "blue")
+            # Disable sending until partner status is confirmed
+            self.set_input_enabled(False)
             self.partner_selected.emit(self.current_partner)
 
     @Slot(str, str)
@@ -116,3 +118,9 @@ class ChatWindow(QMainWindow):
     def set_status(self, text: str, color: str = "black"):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"color: {color}")
+
+    @Slot(bool)
+    def set_input_enabled(self, enabled: bool):
+        """Enables or disables the message input and send button."""
+        self.message_input.setEnabled(enabled)
+        self.send_btn.setEnabled(enabled)

@@ -10,6 +10,14 @@ from NewServerCode import caching
 import json
 from database import KeyStorage
 
+
+def b64_encode(data: Optional[bytes]) -> Optional[str]:
+    """
+    Safely base64-encodes a bytes object into a string, handling None.
+    """
+    if data is None: return None
+    return base64.b64encode(data).decode("utf-8")
+
 class Server:
     def __init__(self, websocket,
                  caching: caching.caching,
@@ -164,7 +172,7 @@ class Server:
                 self.receiver = user_id
                 self.caching.retrieve_text_cache(self.receiver, self.user_id)
             else:
-                payload = self.caching.payload('User_Select', 'User Not Available') # Using client's expected message
+                payload = self.caching.payload('User_Select', 'User Not Online') # Using client's expected message
             asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
 
         except Exception as e:
@@ -184,14 +192,11 @@ class Server:
             if not key_bundle or not key_bundle.get("identity_key"):
                 payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
             else:
-                def b64_encode(data):
-                    if data is None: return None
-                    return base64.b64encode(data).decode("utf-8")
-
                 serializable_bundle = {
                     "identity_key": b64_encode(key_bundle.get("identity_key")),
                     "signed_pre_key": b64_encode(key_bundle.get("signed_pre_key")),
-                    "signature": b64_encode(key_bundle.get("signature")),
+                    "signing_key": b64_encode(key_bundle.get("signing_key")),
+                    "signature": b64_encode(key_bundle.get("signature")), # Correctly encode the signature
                     "one_time_pre_key": b64_encode(key_bundle.get("one_time_pre_key")),
                     "one_time_key_id": key_bundle.get("one_time_key_id"),
                     "user_id": partner_id,
@@ -199,6 +204,7 @@ class Server:
                 payload = self.caching.payload("key_bundle_ok", serializable_bundle)
 
             asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(payload)), self.loop)
+            print(payload)
 
         except Exception as e:
             print(f"Error in caching.handle_key_bundle_request: {e}")

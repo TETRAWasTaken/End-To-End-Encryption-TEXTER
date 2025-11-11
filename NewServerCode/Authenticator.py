@@ -85,6 +85,7 @@ class AuthenticatorAndKeyHandler:
                             if self.KeyStorage.StoreUserKeyBundle(user,
                                                                     key_bundle["identity_key"],
                                                                     key_bundle["signed_pre_key"],
+                                                                    key_bundle["signing_key"],
                                                                     key_bundle["signed_pre_key_signature"],
                                                                     {str(k): v for k, v in key_bundle["one_time_pre_keys"].items()}
                                                                   ):

@@ -117,7 +117,7 @@ class NetworkService(QObject):
                 try:
                     message = json.loads(message)
                     self.message_received.emit(message)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError: # Catching the error inside the loop
                     self.error_occured.emit(f"Invalid JSON Received : {message}")
         except websockets.exceptions.ConnectionClosed:
             self.disconnected.emit()

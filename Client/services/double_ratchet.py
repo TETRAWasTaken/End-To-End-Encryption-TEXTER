@@ -48,10 +48,10 @@ class DoubleRatchetSession:
 
         if partner_dh_pub:
             # We are Alice (the initiator), we have a key to send to
-            self._DHRatchet(partner_dh_pub, is_alice=True)
-        else:
-            # We are Bob (the receiver), we must wait for Alice's first message
-            pass
+            # Or we are Bob, receiving the first message.
+            # The logic inside _DHRatchet handles both cases.
+            self._DHRatchet(partner_dh_pub)
+
 
     def __getstate__(self):
         """
@@ -107,10 +107,10 @@ class DoubleRatchetSession:
         new_ck = hmac.new(ck, b'\x02', 'sha256').digest()
         return new_ck, new_mk
 
-    def _DHRatchet(self, partner_dh_pub_obj: x25519.X25519PublicKey, is_alice=False):
+    def _DHRatchet(self, partner_dh_pub_obj: x25519.X25519PublicKey):
         """Performs a DH ratchet step [cite: 696-707]"""
-        if is_alice:
-            # Alice's first step (Section 3.3 in PDF) [cite: 629-638]
+        if self.CKs is None and self.CKr is None:
+            # This is the first ratchet step for either Alice or Bob.
             self.PN = 0
             self.Ns = 0
             self.Nr = 0
@@ -118,23 +118,19 @@ class DoubleRatchetSession:
             self.DHr_b64 = bytes_to_b64str(partner_dh_pub_obj.public_bytes_raw())
             dh_ex = self.DHs[0].exchange(self.DHr_obj)
             self.RK, self.CKs = self._KDF_RK(self.RK, dh_ex)
-            self.DHs = self.utils.generate_x25519_key_pair()  # New pair
+            # Alice does not generate a new key pair here. She uses the current one until she sends a message.
         else:
-            # Normal ratchet step [cite: 696-707]
+            # This is a normal ratchet step for a received message.
             self.PN = self.Ns
             self.Ns = 0
             self.Nr = 0
             self.DHr_obj = partner_dh_pub_obj
             self.DHr_b64 = bytes_to_b64str(partner_dh_pub_obj.public_bytes_raw())
 
-            # KDF new RK and CKr from old RK and new DH output
+            # KDF new RK and CKr from old RK and new DH output, then generate a new sending key pair for our *next* message
             dh_ex1 = self.DHs[0].exchange(self.DHr_obj)
             self.RK, self.CKr = self._KDF_RK(self.RK, dh_ex1)
-
-            # KDF new RK and CKs from new RK and new DH output
             self.DHs = self.utils.generate_x25519_key_pair()  # Our new key pair
-            dh_ex2 = self.DHs[0].exchange(self.DHr_obj)
-            self.RK, self.CKs = self._KDF_RK(self.RK, dh_ex2)
 
     def _TrySkippedMessageKeys(self, header: dict, body: dict):
         """

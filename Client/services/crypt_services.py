@@ -4,7 +4,7 @@ import json
 import pickle  # We need pickle for the non-JSON-serializable session objects
 from Client.services import x3dh, utils
 from Client.services.double_ratchet import DoubleRatchetSession, bytes_to_b64str, b64str_to_bytes
-from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -193,7 +193,7 @@ class CryptServices:
 
                 raw_opks = state_data.get('private_opks', {})
                 self.private_opks = {
-                    key_id: x25519.X25519PrivateKey.from_private_bytes(opk_bytes)
+                    int(key_id): x25519.X25519PrivateKey.from_private_bytes(opk_bytes)
                     for key_id, opk_bytes in raw_opks.items()
                 }
 
@@ -235,6 +235,7 @@ class CryptServices:
         return {
             "identity_key": bytes_to_b64str(bundle["identity_key"].public_bytes_raw()),
             "signed_pre_key": bytes_to_b64str(bundle["signed_pre_key"].public_bytes_raw()),
+            "signing_key": bytes_to_b64str(bundle["signing_key"].public_bytes_raw()),
             "signed_pre_key_signature": bytes_to_b64str(bundle["signed_pre_key_signature"]),
             "one_time_pre_keys": {
                 str(key_id): bytes_to_b64str(opk.public_bytes_raw()) # Ensure key_id is a string
@@ -246,8 +247,42 @@ class CryptServices:
         """
         Stores a partner's bundle received from the server.
         """
-        self.partner_bundles[partner_username] = bundle_json
-        print(f"Cached bundle for {partner_username}")
+        try:
+            # --- Key Deserialization ---
+            # Use .get() for safety against malformed bundles from the server.
+            ik_str = bundle_json.get("identity_key")
+            spk_str = bundle_json.get("signed_pre_key")
+            sign_k_str = bundle_json.get("signing_key") # Get the signing key
+            sig_str = bundle_json.get("signature")
+
+            if not all([ik_str, spk_str, sig_str, sign_k_str]):
+                raise ValueError("Received an incomplete key bundle from the server.")
+
+            ik_bytes = b64str_to_bytes(ik_str)
+            spk_bytes = b64str_to_bytes(spk_str)
+            sign_k_bytes = b64str_to_bytes(sign_k_str)
+            signature_bytes = b64str_to_bytes(sig_str)
+            opk_bytes = b64str_to_bytes(bundle_json.get("one_time_pre_key")) if bundle_json.get("one_time_pre_key") else None
+
+            identity_key = x25519.X25519PublicKey.from_public_bytes(ik_bytes)
+            signed_pre_key = x25519.X25519PublicKey.from_public_bytes(spk_bytes)
+
+            # Use the correct Ed25519 public signing key for verification
+            verify_key = ed25519.Ed25519PublicKey.from_public_bytes(sign_k_bytes)
+            verify_key.verify(signature_bytes, spk_bytes)
+            print("Signed pre-key signature is valid.")
+
+            # Deserialize the bundle from b64 strings back into cryptography objects
+            deserialized_bundle = {
+                "identity_key": identity_key,
+                "signed_pre_key": signed_pre_key,
+                "one_time_pre_key": x25519.X25519PublicKey.from_public_bytes(opk_bytes) if opk_bytes else None,
+                "one_time_key_id": bundle_json.get("one_time_key_id")
+            }
+            self.partner_bundles[partner_username] = deserialized_bundle
+            print(f"Cached and deserialized bundle for {partner_username}")
+        except Exception as e:
+            print(f"Error storing or verifying partner bundle for {partner_username}: {e}")
 
     def _initiate_session_alice(self, partner_username: str) -> tuple[dict, bytes]:
         """
@@ -258,12 +293,12 @@ class CryptServices:
 
         bundle = self.partner_bundles[partner_username]
 
-        p_ik_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(bundle['identity_key']))
-        p_spk_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(bundle['signed_pre_key']))
+        p_ik_pub = bundle['identity_key']
+        p_spk_pub = bundle['signed_pre_key']
         p_opk_pub = None
-        opk_id = bundle.get('one_time_key_id')
-        if opk_id is not None and bundle.get('one_time_pre_key'):
-            p_opk_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(bundle['one_time_pre_key']))
+        opk_id = bundle.get("one_time_key_id")
+        if opk_id is not None and bundle.get("one_time_pre_key"):
+            p_opk_pub = bundle["one_time_pre_key"]
 
         ek_priv, ek_pub = self.utils.generate_x25519_key_pair()
         ik_priv = self.x3dh.identity_key_private
@@ -296,8 +331,16 @@ class CryptServices:
 
         """Performs the X3DH "Bob" role [cite: 945-954]"""
 
-        p_ik_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(x3dh_header['ik_a']))
-        p_ek_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(x3dh_header['ek_a']))
+        # --- Defensive Deserialization ---
+        # Use .get() to avoid KeyErrors and check for None to avoid AttributeErrors.
+        p_ik_str = x3dh_header.get('ik_a')
+        p_ek_str = x3dh_header.get('ek_a')
+
+        if not p_ik_str or not p_ek_str:
+            raise ValueError("Received incomplete X3DH header from partner.")
+
+        p_ik_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ik_str))
+        p_ek_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ek_str))
         opk_id = x3dh_header.get('opk_id')
 
         ik_priv = self.x3dh.identity_key_private
@@ -307,7 +350,7 @@ class CryptServices:
         if opk_id is not None:
             # --- THIS IS THE FIX ---
             # Retrieve and delete the one-time key from our in-memory cache
-            opk_obj = self.private_opks.pop(str(opk_id), None) # Ensure opk_id is treated as a string
+            opk_obj = self.private_opks.pop(int(opk_id), None) # Ensure opk_id is treated as an integer
             if opk_obj:
                 opk_priv = opk_obj
                 print(f"Used and deleted private OPK {opk_id} from memory.")
@@ -327,7 +370,7 @@ class CryptServices:
         SK = self._X3DH_KDF(km)
 
         # Create a new "Bob" session (no initial partner key)
-        dr = DoubleRatchetSession(SK, partner_dh_pub=None)
+        dr = DoubleRatchetSession(SK, partner_dh_pub=p_ek_pub)
         self.sessions[partner_username] = dr
         # We don't save here, we save in the calling public function
 

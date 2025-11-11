@@ -155,10 +155,10 @@ class StorageManager:
             return {
                 "identity_key": identity_key,
                 "signed_pre_key": signed_pre_key,
-                "signature": signature,
-                "one_time_pre_key": one_time_pre_key if one_time_pre_key is not None else {},
+                "signed_pre_key_signature": signature,
+                "one_time_pre_key": one_time_pre_key, # Will be None if not found
                 "user_id": user_id,
-                "one_time_key_id": one_time_key_id,
+                "one_time_key_id": one_time_key_id, # Will be None if not found
             }
         except Exception as e:
             if conn is not None:
