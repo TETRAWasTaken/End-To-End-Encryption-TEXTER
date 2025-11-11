@@ -85,19 +85,29 @@ class ChatWindow(QMainWindow):
 
     def on_add_partner_click(self):
         partner_name = self.partner_input.text()
-        if partner_name:
+        if partner_name and partner_name != self.username:
+            # Add to list if not already there
+            if not self.contact_list.findItems(partner_name, Qt.MatchFlag.MatchExactly):
+                self.contact_list.addItem(partner_name)
+
+            # Find and set the new item as current
+            items = self.contact_list.findItems(partner_name, Qt.MatchFlag.MatchExactly)
+            if items:
+                self.contact_list.setCurrentItem(items[0])
+
             self.select_partner(partner_name)
             self.partner_input.clear()
 
     def on_partner_select(self, current, previous):
         if current:
             self.select_partner(current.text())
-
+    
     def select_partner(self, partner_name: str):
-        self.current_partner = partner_name
-        self.chat_history.clear()
-        self.set_status(f"Checking availability of {self.current_partner}...", "blue")
-        self.partner_selected.emit(self.current_partner)
+        if partner_name != self.current_partner:
+            self.current_partner = partner_name
+            self.chat_history.clear()
+            self.set_status(f"Checking availability of {self.current_partner}...", "blue")
+            self.partner_selected.emit(self.current_partner)
 
     @Slot(str, str)
     def add_message(self, sender: str, text: str):

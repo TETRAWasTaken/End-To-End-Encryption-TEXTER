@@ -3,6 +3,7 @@ from Client.services import utils
 from typing import Dict, Tuple
 from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 
+import secrets
 
 class X3DH:
     """
@@ -44,9 +45,10 @@ class X3DH:
         self.one_time_pre_keys_private = {}
         opk_public_dict = {}
         for i in range(num_one_time_keys):
-            opk_private, opk_public = self._encryption_util.generate_x25519_key_pair()
-            self.one_time_pre_keys_private[i] = opk_private
-            opk_public_dict[i] = opk_public
+            opk_private, opk_public = self._encryption_util.generate_x25519_key_pair() 
+            opk_id = secrets.randbits(31) # Generate a random 31-bit integer for the ID
+            self.one_time_pre_keys_private[opk_id] = opk_private
+            opk_public_dict[opk_id] = opk_public
 
         public_key_bundle = {
             "identity_key": ik_public,

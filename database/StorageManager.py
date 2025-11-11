@@ -75,8 +75,8 @@ class StorageManager:
 
             # Inserting One-time Pre Keys (executemany expects an iterable of tuples)
             one_time_rows = [
-                (user_id, int(k), v, time_stamp_cr)
-                for k, v in KeyBundle['one_time_pre_key'].items()
+                (user_id, k, v, time_stamp_cr)
+                for k, v in KeyBundle['one_time_pre_key'].items() 
             ]
             if one_time_rows:
                 cur.executemany(
@@ -189,5 +189,3 @@ class StorageManager:
             self.DB.pool.putconn(conn)
         except Exception as e:
             print(f"Error : {e} while deleting KeyBundle")
-
-

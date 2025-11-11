@@ -53,6 +53,41 @@ class DoubleRatchetSession:
             # We are Bob (the receiver), we must wait for Alice's first message
             pass
 
+    def __getstate__(self):
+        """
+        Returns a serialisable state dictionary for pickle
+        """
+        state = self.__dict__.copy()
+        del state["utils"]
+
+        if state['DHs']:
+            state['DHs'] = (
+                state['DHs'][0].private_bytes_raw(),
+                state['DHs'][1].public_bytes_raw()
+            )
+        if state['DHr_obj']:
+            state['DHr_obj'] = state['DHr_obj'].public_bytes_raw()
+
+        return state
+
+    def __setstate__(self, state):
+        """
+        Restores state from a serialised dictionary
+        """
+
+        if state['DHs']:
+            state['DHs'] = (
+                x25519.X25519PrivateKey.from_private_bytes(state['DHs'][0]),
+                x25519.X25519PublicKey.from_public_bytes(state['DHs'][1])
+            )
+
+        if state['DHr_obj']:
+            state['DHr_obj'] = x25519.X25519PublicKey.from_public_bytes(state['DHr_obj'])
+
+        state['utils'] = utils.EncryptionUtil()
+
+        self.__dict__.update(state)
+
     def _KDF_RK(self, rk, dh_out):
         """KDF for the Root Chain [cite: 597]"""
         hkdf = HKDF(

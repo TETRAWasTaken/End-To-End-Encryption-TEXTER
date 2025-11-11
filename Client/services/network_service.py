@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import ssl
 import websockets
 import json
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Slot
 
 """
 This class handles the asyncio event loop and all the communication, 
@@ -23,13 +24,42 @@ class NetworkService(QObject):
     error_occured = Signal(str)
 
     def __init__(self, host_uri = "127.0.0.1"):
-        """
-        Initializes the network thread
-        :param on_message_callback: The function to call when a message is received
-        """
         super().__init__()
         self.websocket = None
         self.host_uri = 'wss://' + host_uri + ':12345'
+        self._create_ssl_context()
+
+        # --- Threading and asyncio setup ---
+        self.loop = None
+        self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
+        self._loop_started = threading.Event()
+
+    def start(self):
+        """Starts the network thread."""
+        if not self._thread.is_alive():
+            self._thread.start()
+
+    def _run_event_loop(self):
+        """The target method for the background thread."""
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self._loop_started.set()  # Signal that the loop is ready
+            self.loop.run_forever()
+        finally:
+            if self.loop:
+                self.loop.close()
+
+    def schedule_task(self, coro):
+        """Schedules a coroutine to run on the service's event loop. This is thread-safe."""
+        if not self._loop_started.wait(timeout=5):  # Wait up to 5 seconds for the loop
+            print("NetworkService: Timed out waiting for the event loop to start.")
+            return
+
+        if self.loop and self.loop.is_running():
+            return asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+    def _create_ssl_context(self):
         self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         self.ssl_context.verify_mode = ssl.CERT_REQUIRED
         self.ssl_context.check_hostname = False
@@ -63,14 +93,18 @@ class NetworkService(QObject):
 
         return self.payload("Encrypted", text_payload)
 
-    async def connect(self, **kwargs):
+    async def _connect(self, **kwargs):
         """
         Connects to the server
         """
         try:
             self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context)
             self.connected.emit()
-            asyncio.create_task(self.listen())
+            await self.listen()
+        except websockets.exceptions.ConnectionClosed as e:
+            self.error_occured.emit(f"Connection Closed : {str(e)}")
+            self.disconnected.emit()
+            print(f"Connection Closed : {str(e)}")
         except Exception as e:
             self.error_occured.emit(f"Connect Failed : {str(e)}")
 
@@ -78,7 +112,7 @@ class NetworkService(QObject):
         """
         Listens for messages from the server
         """
-        try:
+        try: #
             async for message in self.websocket:
                 try:
                     message = json.loads(message)
@@ -91,7 +125,7 @@ class NetworkService(QObject):
             self.error_occured.emit(f"Error in listen : {str(e)}")
             self.disconnected.emit()
 
-    async def send_payload(self, payload: json.dumps):
+    async def _send_payload(self, payload: json.dumps):
         """
         Sends a payload to the server
         """
@@ -99,9 +133,9 @@ class NetworkService(QObject):
             try:
                 await self.websocket.send(payload)
             except Exception as e:
-                self.error_occured.emit(f"Error in send_payload : {str(e)}")
+                self.error_occured.emit(f"Error in _send_payload : {str(e)}")
 
-    async def send_raw(self, message):
+    async def _send_raw(self, message):
         """
         Sends a raw message to the server
         """
@@ -109,4 +143,18 @@ class NetworkService(QObject):
             try:
                 await self.websocket.send(message)
             except Exception as e:
-                self.error_occured.emit(f"Error in send_raw : {str(e)}")
+                self.error_occured.emit(f"Error in _send_raw : {str(e)}")
+
+    # --- Public slots to be called from other threads ---
+
+    @Slot()
+    def connect(self):
+        self.schedule_task(self._connect())
+
+    @Slot(str)
+    def send_payload(self, payload: str):
+        self.schedule_task(self._send_payload(payload))
+
+    @Slot(str)
+    def send_raw(self, message: str):
+        self.schedule_task(self._send_raw(message))

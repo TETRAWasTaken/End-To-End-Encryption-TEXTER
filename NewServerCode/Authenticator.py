@@ -30,24 +30,24 @@ class AuthenticatorAndKeyHandler:
         authenticated_and_handled = False
         try:
             while not authenticated_and_handled:
-                command = await websocket.recv()
+                payload_str = await websocket.recv()
+                payload = json.loads(payload_str)
+                command = payload.get("command")
 
                 if command == "login":
                     print(f"Login requested by {websocket.remote_address}")
-                    cred = await websocket.recv()
-                    cred = json.loads(cred)
+                    cred = payload.get("credentials", {})
                     user = cred["username"]
                     passw = cred["password"]
 
                     if not user or not passw:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
-
                     try:
                         if self.caching.check_credentials(user, passw):
                             await websocket.send(self.caching.payload("ok", "success"))
                             authenticated_and_handled = True
-                            self.caching.ACTIVEUSERS[websocket] = [user]
+                            self.caching.add_active_user(websocket, user, None) # Use thread-safe method
                             return True
 
                         else:
@@ -58,10 +58,10 @@ class AuthenticatorAndKeyHandler:
                         print(f"Account not found for {user if user else 'unknown'}")
                         await websocket.send(self.caching.payload("error", "NAF"))
 
-                elif command == "reg":
+                elif command == "register":
+                    # This part of the logic can be updated similarly if needed.
                     print(f"Registration requested by {websocket.remote_address}")
-                    cred = await websocket.recv()
-                    cred = json.loads(cred)
+                    cred = payload.get("credentials", {})
                     user = cred["username"]
                     passw = cred["password"]
 
@@ -83,10 +83,11 @@ class AuthenticatorAndKeyHandler:
                             key_bundle = json.loads(key_bundle)
                             print(f"Received key bundle from {websocket.remote_address}, user_id - {user}")
                             if self.KeyStorage.StoreUserKeyBundle(user,
-                                                              key_bundle["identity_key"],
-                                                              key_bundle["signed_pre_key"],
-                                                              key_bundle["signed_pre_key_signature"],
-                                                              key_bundle["one_time_pre_key"]):
+                                                                    key_bundle["identity_key"],
+                                                                    key_bundle["signed_pre_key"],
+                                                                    key_bundle["signed_pre_key_signature"],
+                                                                    {str(k): v for k, v in key_bundle["one_time_pre_keys"].items()}
+                                                                  ):
                                 print(f"Saved keys for {user} to database")
                                 await websocket.send(self.caching.payload("ok", "keys_ok"))
                             else:

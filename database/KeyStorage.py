@@ -21,7 +21,7 @@ class KeyStorage:
                            identity_key: x25519.X25519PublicKey,
                            signed_pre_key: x25519.X25519PublicKey,
                            signed_pre_key_signature: bytes,
-                           one_time_pre_key: dict[int, x25519.X25519PublicKey]) -> bool:
+                           one_time_pre_key: dict[str, x25519.X25519PublicKey]) -> bool:
         """
         Calls the Storage manager to save the KeyBundle to the database.
         :param user_id:

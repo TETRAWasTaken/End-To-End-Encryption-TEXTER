@@ -1,5 +1,4 @@
 from __future__ import annotations
-import base64
 import os
 import json
 import pickle  # We need pickle for the non-JSON-serializable session objects
@@ -10,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
-from typing import Dict, Any
+from typing import Dict
 
 
 class CryptServices:
@@ -28,6 +27,7 @@ class CryptServices:
         # Paths to our two protected files
         self._key_file = f"{self.username}_keystore.json"
         self._state_file = f"{self.username}_statestore.json"
+        self._contacts_file = f"{self.username}_contacts.json"
 
         # --- In-Memory State ---
         # The key derived from the user's password, stored only for this session
@@ -46,7 +46,7 @@ class CryptServices:
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=100000,
+            iterations=1000,  # <-- Set to 1000
             backend=default_backend()
         )
         return kdf.derive(password.encode("utf-8"))
@@ -74,9 +74,14 @@ class CryptServices:
 
         print("Persisting dynamic state...")
         try:
+            serialized_opks = {
+                key_id: opk.private_bytes_raw()
+                for key_id, opk in self.private_opks.items()
+            }
+
             # We must use pickle because DR objects are not JSON serializable
             state_data = {
-                "private_opks": self.private_opks,
+                "private_opks": serialized_opks,
                 "sessions": self.sessions
             }
             plaintext_bytes = pickle.dumps(state_data)
@@ -103,7 +108,7 @@ class CryptServices:
         4. Returns the public bundle for upload.
         """
         print("Generating new key bundle...")
-        public_bundle_obj, private_bundle_obj = self.x3dh.generate_key_bundle()
+        public_bundle_obj = self.x3dh.generate_key_bundle()
 
         # 1. Derive the file key
         salt = os.urandom(16)
@@ -111,9 +116,9 @@ class CryptServices:
 
         # 2. Save long-term private keys to encrypted keystore
         private_keys = {
-            "identity_key": bytes_to_b64str(private_bundle_obj["identity_key"].private_bytes_raw()),
-            "signed_pre_key": bytes_to_b64str(private_bundle_obj["signed_pre_key"].private_bytes_raw()),
-            "signing_key": bytes_to_b64str(private_bundle_obj["signing_key"].private_bytes_raw())
+            "identity_key": bytes_to_b64str(self.x3dh.identity_key_private.private_bytes_raw()),
+            "signed_pre_key": bytes_to_b64str(self.x3dh.signed_pre_key_private.private_bytes_raw()),
+            "signing_key": bytes_to_b64str(self.x3dh.signing_key_private.private_bytes_raw())
         }
 
         plaintext_bytes = json.dumps(private_keys).encode('utf-8')
@@ -129,7 +134,7 @@ class CryptServices:
             }, f)
 
         # 3. Save dynamic state (OPKs) to the state file
-        self.private_opks = private_bundle_obj["one_time_pre_keys"]
+        self.private_opks = self.x3dh.one_time_pre_keys_private
         self.sessions = {}
         self._save_state_file()
         print(f"Saved {len(self.private_opks)} private OPKs to state file.")
@@ -186,7 +191,12 @@ class CryptServices:
                 plaintext_bytes = self.utils.decrypt_aes_gcm(self._file_key, ciphertext, nonce, tag)
                 state_data = pickle.loads(plaintext_bytes)
 
-                self.private_opks = state_data.get('private_opks', {})
+                raw_opks = state_data.get('private_opks', {})
+                self.private_opks = {
+                    key_id: x25519.X25519PrivateKey.from_private_bytes(opk_bytes)
+                    for key_id, opk_bytes in raw_opks.items()
+                }
+
                 self.sessions = state_data.get('sessions', {})
                 print(f"Loaded {len(self.private_opks)} OPKs and {len(self.sessions)} sessions.")
 
@@ -197,6 +207,26 @@ class CryptServices:
             self._file_key = None  # Clear key on failure
             return False
 
+    def save_contacts_to_disk(self):
+        """Saves the current list of session partners as contacts."""
+        try:
+            contacts = list(self.sessions.keys())
+            with open(self._contacts_file, 'w') as f:
+                json.dump(contacts, f)
+            print(f"Saved {len(contacts)} contacts to {self._contacts_file}")
+        except Exception as e:
+            print(f"Error saving contacts: {e}")
+
+    def load_contacts_from_disk(self) -> list:
+        """Loads the contact list from disk."""
+        if not os.path.exists(self._contacts_file):
+            return []
+        try:
+            with open(self._contacts_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading contacts: {e}")
+            return []
 
     def serializable_key_bundle(self, bundle: dict) -> Dict:
         """
@@ -207,7 +237,7 @@ class CryptServices:
             "signed_pre_key": bytes_to_b64str(bundle["signed_pre_key"].public_bytes_raw()),
             "signed_pre_key_signature": bytes_to_b64str(bundle["signed_pre_key_signature"]),
             "one_time_pre_keys": {
-                int(key_id): bytes_to_b64str(opk.public_bytes_raw())
+                str(key_id): bytes_to_b64str(opk.public_bytes_raw()) # Ensure key_id is a string
                 for key_id, opk in bundle["one_time_pre_keys"].items()
             }
         }
@@ -277,7 +307,7 @@ class CryptServices:
         if opk_id is not None:
             # --- THIS IS THE FIX ---
             # Retrieve and delete the one-time key from our in-memory cache
-            opk_obj = self.private_opks.pop(opk_id, None)
+            opk_obj = self.private_opks.pop(str(opk_id), None) # Ensure opk_id is treated as a string
             if opk_obj:
                 opk_priv = opk_obj
                 print(f"Used and deleted private OPK {opk_id} from memory.")
@@ -316,6 +346,7 @@ class CryptServices:
         dr = self.sessions[partner_username]
         dr_header, dr_body = dr.RatchetEncrypt(plaintext.encode('utf-8'))
 
+        self.save_contacts_to_disk() # Persist contacts whenever a session is used/updated
         self._save_state_file()
 
         return {
@@ -344,6 +375,7 @@ class CryptServices:
 
         plaintext_bytes = dr.RatchetDecrypt(dr_header, dr_body)
 
+        self.save_contacts_to_disk() # Persist contacts whenever a session is used/updated
         self._save_state_file()
 
         return plaintext_bytes.decode('utf-8')

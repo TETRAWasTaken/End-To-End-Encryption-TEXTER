@@ -1,6 +1,3 @@
--- This the initiator file for a database in postgre for the server initialization --
-create database x3dh;
-
 -- Table to store Each registered user's username and password(hash) --
 create table User_Info(user_id varchar(100) Primary key, password varchar(100));
 

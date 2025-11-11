@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import psycopg2
 import json
+import threading # Import threading
 
 from database import DB_connect
 
@@ -13,9 +14,10 @@ class caching:
         self.DB = DB
         self.cacheDB = cacheDB
         self.ACTIVEUSERS = {} # { websocket : [ user_id , socket_handler ]}
+        self._active_users_lock = threading.Lock() # Add a lock for ACTIVEUSERS
 
     @staticmethod
-    def payload(status: str, message: str | dict) -> json.dumps:
+    def payload(status: str, message: str | dict):
         """
         Describes the general payload of each message sent
         :param status: The basic code of a sent message, can be "error", "ok"
@@ -30,7 +32,7 @@ class caching:
         return json.dumps(payload)
 
     @staticmethod
-    def message_payload(self, sender_user_id: str, receiver_user_id: str, text) -> json.dumps:
+    def message_payload(self, sender_user_id: str, receiver_user_id: str, text): # Removed staticmethod
         """
         A sub-json payload definition to send an encrypted text
         """
@@ -42,18 +44,53 @@ class caching:
 
         return self.payload("Encrypted", text_payload)
 
-    @staticmethod
-    def check_ACTIVEUSER(self, user_id: str):
+    # --- New thread-safe methods for managing ACTIVEUSERS ---
+    def add_active_user(self, websocket, user_id: str, socket_handler=None):
+        """Adds a new active user to the dictionary."""
+        with self._active_users_lock:
+            self.ACTIVEUSERS[websocket] = [user_id, socket_handler]
+
+    def update_active_user_handler(self, websocket, socket_handler):
+        """Updates the socket_handler for an existing active user."""
+        with self._active_users_lock:
+            if websocket in self.ACTIVEUSERS:
+                self.ACTIVEUSERS[websocket][1] = socket_handler
+
+    def remove_active_user(self, websocket):
+        """Removes an active user from the dictionary."""
+        with self._active_users_lock:
+            if websocket in self.ACTIVEUSERS:
+                del self.ACTIVEUSERS[websocket]
+
+    def get_active_user_info(self, websocket):
+        """Retrieves user_id and socket_handler for a given websocket."""
+        with self._active_users_lock:
+            return self.ACTIVEUSERS.get(websocket)
+
+    def get_active_user_websocket(self, user_id: str):
         """
         Checks if the user is active or not.
+        Returns the websocket object if the user is active, otherwise None.
         """
-        for i in self.ACTIVEUSERS.keys():
-            if self.ACTIVEUSERS[i][0] == user_id:
-                return i
-            else:
-                continue
-        else:
-            return False
+        with self._active_users_lock:
+            for ws, (u_id, _) in self.ACTIVEUSERS.items():
+                if u_id == user_id:
+                    return ws
+            return None
+
+    def get_all_active_users_websockets(self):
+        """
+        Returns a list of all active websocket keys.
+        This is useful for iteration, but individual access should still use get_active_user_info.
+        """
+        with self._active_users_lock:
+            return list(self.ACTIVEUSERS.keys())
+
+    # --- End of new thread-safe methods ---
+
+    # The old check_ACTIVEUSER is replaced by get_active_user_websocket.
+    # If you still need a method named check_ACTIVEUSER, you can alias it:
+    # check_ACTIVEUSER = get_active_user_websocket
 
     def check_credentials(self, user_id: str, *password: str) -> bool:
         """
@@ -186,29 +223,32 @@ class caching:
         :return bool:
         """
         try:
-            if not cache:
-                socket = self.check_ACTIVEUSER(receiver_id)
-                if socket:
+            socket_ws = self.get_active_user_websocket(receiver_id)
+
+            if socket_ws:
+                active_user_info = self.get_active_user_info(socket_ws)
+                if active_user_info and active_user_info[1]: # active_user_info[1] is the socket_handler
+                    socket_handler = active_user_info[1]
                     command_payload = {'method': 'send_text',
-                                       'args': self.message_payload(self, sender_id, receiver_id, text)}
-                    self.ACTIVEUSERS[socket][1].command_queue.put(command_payload)
-                    self.insert_into_textcache(text, sender_id, receiver_id, True)
+                                       'args': json.loads(self.message_payload(self, sender_id, receiver_id, text))}
+                    socket_handler.command_queue.put(command_payload)
+
+                    # Only cache if not explicitly told not to (i.e., if cache is empty or False)
+                    if not cache or cache[0] is False:
+                        self.insert_into_textcache(text, sender_id, receiver_id, True)
                     return True
                 else:
-                    self.insert_into_textcache(text, sender_id, receiver_id)
+                    # User is active, but handler not fully set up or missing (shouldn't happen with proper flow)
+                    if not cache or cache[0] is False:
+                        self.insert_into_textcache(text, sender_id, receiver_id)
                     return False
             else:
-                socket = self.check_ACTIVEUSER(receiver_id)
-                if socket:
-                    command_payload = {'method': 'send_text',
-                                       'args': self.message_payload(self, sender_id, receiver_id, text)}
-                    self.ACTIVEUSERS[socket][1].command_queue.put(command_payload)
-                    return True
-                else:
-                    return False
-
+                # User is not active, cache the message
+                self.insert_into_textcache(text, sender_id, receiver_id)
+                return False
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
+            return False # Ensure a boolean is always returned
 
     def retrieve_text_cache(self, sender_id: str, receiver_id: str):
         """
@@ -224,16 +264,18 @@ class caching:
 
             if result:
                 for i in result:
-                    if self.send_text(sender_id, receiver_id, i[0]):
+                    # Pass True to send_text to indicate it's from cache, so it doesn't re-cache
+                    if self.send_text(sender_id, receiver_id, i[0], True):
                         cur.execute("UPDATE text_cache SET flag = %s, time_stamp_last_usage = %s WHERE time_stamp_creation = %s AND text_cache = %s",
                                     (True, datetime.datetime.now(), i[1], i[0]))
                     else:
                         print("Error while sending text to client.")
-
+                conn.commit() # Commit updates after the loop
             else:
                 print("No text found in cache.")
 
         except Exception as e:
             print(f"Error in caching.retrieve_text_cache: {e}")
-
-
+        finally:
+            if conn:
+                self.cacheDB.pool.putconn(conn)

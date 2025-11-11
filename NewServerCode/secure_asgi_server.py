@@ -71,8 +71,8 @@ class Server:
             socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
             socket_handler.associated_thread.daemon = True
             socket_handler.associated_thread.start()
-            # Preserve original behavior of tracking active users
-            self.caching.ACTIVEUSERS[websocket][1].append(socket_handler)
+            self.caching.update_active_user_handler(websocket, socket_handler)
+            await asyncio.to_thread(socket_handler.associated_thread.join)
         else:
             await websocket.send((self.caching.payload("error", "Authentication Failed")))
             await websocket.close()
@@ -84,13 +84,17 @@ class Server:
         """
         while True:
             try:
-                for i in list(self.caching.ACTIVEUSERS.keys()):
-                    socket_handler_instance = self.caching.ACTIVEUSERS[i][1]
-                    if not socket_handler_instance.associated_thread.is_alive():
-                        socket_handler_instance.associated_thread.join(timeout=1.0)
-                        print(f"User {i} has been disconnected and all threads are cleared.")
-                        del self.caching.ACTIVEUSERS[i]
-                # Keep the original cadence
+                # Use thread-safe method to get a snapshot of active websockets
+                for ws in self.caching.get_all_active_users_websockets():
+                    active_user_info = self.caching.get_active_user_info(ws)
+                    if active_user_info and active_user_info[1]: # active_user_info[1] is the socket_handler
+                        socket_handler_instance = active_user_info[1]
+                        if not socket_handler_instance.associated_thread.is_alive():
+                            socket_handler_instance.associated_thread.join(timeout=1.0)
+                            print(f"User {active_user_info[0]} (ws: {ws.remote_address}) has been disconnected and all threads are cleared.")
+                            self.caching.remove_active_user(ws) # Use thread-safe method to remove
+                    else: # If info or handler is missing, remove the entry
+                        self.caching.remove_active_user(ws)
                 import time
                 time.sleep(5)
             except (RuntimeError, KeyError) as e:

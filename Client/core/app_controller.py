@@ -33,7 +33,8 @@ class AppController(QObject):
         Starts the Application
         """
         self.login_view.show()
-        asyncio.get_event_loop().create_task(self.network.connect())
+        self.network.start()  # Start the background thread
+        self.network.connect()  # Schedule the connection
 
     # Mapping the signals
 
@@ -92,7 +93,7 @@ class AppController(QObject):
             elif message == "Registration Successful":
                 view.set_status("Registered! Publishing keys...", "blue")
                 self.current_state = "register_keys"
-                asyncio.get_event_loop().create_task(self.handle_publish_keys())
+                self.network.schedule_task(self.handle_publish_keys())
             elif message == "keys_ok":
                 view.set_status("Keys published! You can log in.", "green")
                 self.current_state = "login"
@@ -103,11 +104,14 @@ class AppController(QObject):
         elif status == "Encrypted":
             if self.chat_view:
                 sender = message.get("sender_user_id")
-                encrypted_payload = message.get("text")  # 'text' holds the crypto dict
+                # Ensure we only process messages not from ourselves
+                if sender != self.username:
+                    encrypted_payload = message.get("text")  # 'text' holds the crypto dict
 
-                # Decrypt
-                plaintext = self.crypt_services.decrypt_message(sender, encrypted_payload)
-                self.chat_view.add_message(sender, plaintext)
+                    # Decrypt
+                    plaintext = self.crypt_services.decrypt_message(sender, encrypted_payload)
+                    self.chat_view.add_message(sender, plaintext)
+
             else:
                 print("Received chat message but no chat view is active.")
 
@@ -115,16 +119,14 @@ class AppController(QObject):
             if message == "User Available":
                 if self.chat_view:
                     self.chat_view.set_status("User is available", "green")
-                print(f"User Status: {message}")
             elif message == "User Not Available":
                 if self.chat_view:
                     self.chat_view.set_status("User not available", "red")
-                print(f"User Status: {message}")
 
         elif status == "key_bundle_ok":
             bundle_json = message
             partner_username = bundle_json.get("user_id")
-            if partner_username and self.crypt_services:
+            if partner_username and self.crypt_services and partner_username != self.username:
                 self.crypt_services.store_partner_key_bundle(partner_username, bundle_json)
 
                 if self.chat_view and self.chat_view.current_partner == partner_username:
@@ -151,21 +153,32 @@ class AppController(QObject):
         self.login_view.set_status("Logging in...", "blue")
         self.current_state = "login"
 
-        asyncio.get_event_loop().create_task(self.network.send_raw("login"))
-        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
+        login_payload = {
+            "command": "login",
+            "credentials": {"username": username, "password": password}
+        }
+        self.network.send_payload(json.dumps(login_payload))
 
     @Slot(str, str)
     def handle_register_request(self, username: str, password: str):
+        self.login_view.set_status("Generating Keys...", "blue")
+        self.network.schedule_task(self.async_register(username, password))
+
+    async def async_register(self, username: str, password: str):
         self.username = username
-        self.login_view.set_status("Generating keys...", "blue")
         self.crypt_services = CryptServices(username)
 
         try:
-            self.public_bundle = self.crypt_services.generate_and_save_key(password)
+            self.public_bundle = await asyncio.to_thread(
+                self.crypt_services.generate_and_save_key, password
+            )
             self.login_view.set_status("Registering...", "blue")
             self.current_state = "register"
-            asyncio.get_event_loop().create_task(self.network.send_raw("register"))
-            asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
+            register_payload = {
+                "command": "register",
+                "credentials": {"username": username, "password": password}
+            }
+            self.network.send_payload(json.dumps(register_payload))
 
         except Exception as e:
             self.login_view.set_status(f"Error in register_request: {str(e)}", "red")
@@ -175,14 +188,18 @@ class AppController(QObject):
         Called by handle_network_message after registration succesful
         """
         if self.public_bundle:
-            await self.network.send_raw("publish_keys")
-            await self.network.send_payload(json.dumps(self.public_bundle))
+            self.network.send_raw("publish_keys")
+            self.network.send_payload(json.dumps(self.public_bundle))
             self.public_bundle = None
         else:
             print("Error: Public key bundle not found.")
 
     @Slot(str, str)
     def handle_send_message(self, partner: str, text: str):
+        if partner not in self.crypt_services.partner_bundles:
+            self.chat_view.set_status(f"Cannot send message. No key bundle for {partner}. Please re-select them.", "red")
+            return
+
         encrypted_payload = self.crypt_services.encrypt_message(partner, text)
 
         server_payload = {
@@ -193,7 +210,7 @@ class AppController(QObject):
                 "recv_user_id": partner
             }
         }
-        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(server_payload)))
+        self.network.send_payload(json.dumps(server_payload))
 
     @Slot(str)
     def handle_partner_select(self, partner: str):
@@ -204,22 +221,27 @@ class AppController(QObject):
             "status": "User_Select",
             "user_id": partner
         }
-        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(payload)))
+        self.network.send_payload(json.dumps(payload))
 
         print(f"Requesting the key bundle of {partner}")
         bundle_request_payload = {
             "status": "request_key_bundle",
             "user_id": partner
         }
-        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(bundle_request_payload)))
+        self.network.send_payload(json.dumps(bundle_request_payload))
 
     # Internal Logic
     def on_login_success(self):
         """
         Swaps the login window with the chat window
         """
+        # Save contacts before closing login view
+        if self.crypt_services:
+            self.crypt_services.save_contacts_to_disk()
+
         self.chat_view = ChatWindow(self.username)
         self.connect_chat_signals()
+        self.load_contact_list() # Load contacts into the new chat view
         self.chat_view.show()
         self.login_view.close()
 
@@ -227,3 +249,8 @@ class AppController(QObject):
         """
         Loads the contact list of the current logged in user
         """
+        if self.chat_view and self.crypt_services:
+            contacts = self.crypt_services.load_contacts_from_disk()
+            for contact in contacts:
+                self.chat_view.contact_list.addItem(contact)
+            print(f"Loaded {len(contacts)} contacts.")
