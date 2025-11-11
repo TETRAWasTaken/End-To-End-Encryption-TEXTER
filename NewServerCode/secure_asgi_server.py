@@ -6,7 +6,7 @@ import threading
 from typing import Callable, Awaitable, Dict, Any
 
 from NewServerCode import Authenticator
-from database import StorageManager
+from database import StorageManager, KeyStorage
 from database import DB_connect
 from NewServerCode import Socket
 from NewServerCode import caching as caching_module
@@ -50,6 +50,7 @@ class Server:
         self.cacheDB = DB_connect.DB_connect()
         self.caching = caching_module.caching(self.DB, self.cacheDB)
         self.StorageManager = StorageManager.StorageManager(self.DB)
+        self.KeyStorage = KeyStorage.KeyStorage(self.StorageManager)
         self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.KeyStorage)
         print("Database connection established.")
 
@@ -65,7 +66,10 @@ class Server:
         """
         loop = asyncio.get_running_loop()
         if await self.authandkeyhandler.handle_authentication(websocket, loop):
-            socket_handler = Socket.Server(websocket=websocket, caching=self.caching, loop=loop)
+            socket_handler = Socket.Server(websocket=websocket,
+                                           caching=self.caching,
+                                           loop=loop,
+                                           keystorage=self.KeyStorage)
             socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
             socket_handler.associated_thread.daemon = True
             socket_handler.associated_thread.start()

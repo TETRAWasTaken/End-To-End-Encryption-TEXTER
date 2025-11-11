@@ -121,6 +121,20 @@ class AppController(QObject):
                     self.chat_view.set_status("User not available", "red")
                 print(f"User Status: {message}")
 
+        elif status == "key_bundle_ok":
+            bundle_json = message
+            partner_username = bundle_json.get("user_id")
+            if partner_username and self.crypt_services:
+                self.crypt_services.store_partner_key_bundle(partner_username, bundle_json)
+
+                if self.chat_view and self.chat_view.current_partner == partner_username:
+                    self.chat_view.set_status(f"Ready too chat with {partner_username}", "green")
+
+        elif status == "key_bundle_fail":
+            if self.chat_view:
+                self.chat_view.set_status("Selected partner cannot be contacted", "red")
+
+
 
     # Slots for GUI Signals
     @Slot(str, str)
@@ -192,7 +206,12 @@ class AppController(QObject):
         }
         asyncio.create_task(self.network.send_payload(json.dumps(payload)))
 
-        #TODO: Request key bundle for new selected partner
+        print(f"Requesting the key bundle of {partner}")
+        bundle_request_payload = {
+            "status": "request_key_bundle",
+            "user_id": partner
+        }
+        asyncio.create_task(self.network.send_payload(json.dumps(bundle_request_payload)))
 
     # Internal Logic
     def on_login_success(self):
