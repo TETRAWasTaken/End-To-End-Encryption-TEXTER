@@ -203,3 +203,8 @@ class AppController(QObject):
         self.connect_chat_signals()
         self.chat_view.show()
         self.login_view.close()
+
+    def load_contact_list(self):
+        """
+        Loads the contact list of the current logged in user
+        """
