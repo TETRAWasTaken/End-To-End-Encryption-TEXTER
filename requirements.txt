@@ -1,0 +1,12 @@
+asyncio==4.0.0
+cffi==2.0.0
+cryptography==46.0.3
+psycopg2==2.9.10
+psycopg2-binary==2.9.10
+pycparser==2.22
+PySide6==6.10.0
+PySide6_Addons==6.10.0
+PySide6_Essentials==6.10.0
+qasync==0.28.0
+uvicorn==0.38.0
+websockets==15.0.1
