@@ -22,17 +22,18 @@ class NetworkService(QObject):
     message_received = Signal(dict)
     error_occured = Signal(str)
 
-    def __init__(self, host_uri = "", myself = ""):
+    def __init__(self, host_uri = "127.0.0.1"):
         """
         Initializes the network thread
         :param on_message_callback: The function to call when a message is received
         """
         super().__init__()
         self.websocket = None
-        self.host_uri = host_uri
-        self.myself = myself
+        self.host_uri = 'wss://' + host_uri + ':12345'
         self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        self.ssl_context.load_verify_locations(cafile='Client/services/server.crt')
+        self.ssl_context.verify_mode = ssl.CERT_REQUIRED
+        self.ssl_context.check_hostname = False
+        self.ssl_context.load_verify_locations(cafile='server.crt')
 
     @staticmethod
     def payload(status: str, message: str | dict) -> json.dumps:

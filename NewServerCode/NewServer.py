@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 import os
-import Authenticator
+from NewServerCode import Authenticator
 
 from database import StorageManager
 from database import DB_connect

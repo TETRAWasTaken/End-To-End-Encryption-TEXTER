@@ -12,8 +12,6 @@ from NewServerCode import Socket
 from NewServerCode import caching as caching_module
 
 # ASGI application compatible with uvicorn while preserving existing architecture.
-
-
 class Server:
     def __init__(self):
         # Objects
@@ -141,6 +139,12 @@ async def _websocket(scope: Dict[str, Any], receive: Callable[[], Awaitable[Dict
             self._send = send
             self._closed = False
 
+            client_info = scope.get("client")
+            if client_info:
+                self.remote_address = f"{client_info[0]}:{client_info[1]}"
+            else:
+                self.remote_address = "Unknown_address"
+
         async def recv(self):
             while True:
                 msg = await self._receive()
@@ -210,3 +214,5 @@ async def app(scope: Dict[str, Any], receive: Callable[[], Awaitable[Dict[str, A
 # - Run with: uvicorn NewServerCode.NewServer:app --host 0.0.0.0 --port ${PORT:-12345}
 # - If you need TLS via uvicorn: add --ssl-keyfile server.key --ssl-certfile server.crt
 # - PORT env var is read by your Procfile/launcher; uvicorn handles it directly.
+
+# - Run in terminal using the alias "runserver"

@@ -13,7 +13,7 @@ class DB_connect:
         self.pool = None
         self._connect()  # Call the internal connection method during initialization
 
-    def load_config(self, filename: str = '../database.ini', section: str = 'postgresql') -> dict:
+    def load_config(self, filename: str = 'database.ini', section: str = 'postgresql') -> dict:
         """
         Load database configuration from the file
         :param filename: name of the configuration file

@@ -33,7 +33,7 @@ class AppController(QObject):
         Starts the Application
         """
         self.login_view.show()
-        asyncio.create_task(self.network.connect())
+        asyncio.get_event_loop().create_task(self.network.connect())
 
     # Mapping the signals
 
@@ -92,7 +92,7 @@ class AppController(QObject):
             elif message == "Registration Successful":
                 view.set_status("Registered! Publishing keys...", "blue")
                 self.current_state = "register_keys"
-                asyncio.create_task(self.handle_publish_keys())
+                asyncio.get_event_loop().create_task(self.handle_publish_keys())
             elif message == "keys_ok":
                 view.set_status("Keys published! You can log in.", "green")
                 self.current_state = "login"
@@ -151,8 +151,8 @@ class AppController(QObject):
         self.login_view.set_status("Logging in...", "blue")
         self.current_state = "login"
 
-        asyncio.create_task(self.network.send_raw("login"))
-        asyncio.create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
+        asyncio.get_event_loop().create_task(self.network.send_raw("login"))
+        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
 
     @Slot(str, str)
     def handle_register_request(self, username: str, password: str):
@@ -164,8 +164,8 @@ class AppController(QObject):
             self.public_bundle = self.crypt_services.generate_and_save_key(password)
             self.login_view.set_status("Registering...", "blue")
             self.current_state = "register"
-            asyncio.create_task(self.network.send_raw("register"))
-            asyncio.create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
+            asyncio.get_event_loop().create_task(self.network.send_raw("register"))
+            asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps({"username": username, "password": password})))
 
         except Exception as e:
             self.login_view.set_status(f"Error in register_request: {str(e)}", "red")
@@ -193,7 +193,7 @@ class AppController(QObject):
                 "recv_user_id": partner
             }
         }
-        asyncio.create_task(self.network.send_payload(json.dumps(server_payload)))
+        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(server_payload)))
 
     @Slot(str)
     def handle_partner_select(self, partner: str):
@@ -204,14 +204,14 @@ class AppController(QObject):
             "status": "User_Select",
             "user_id": partner
         }
-        asyncio.create_task(self.network.send_payload(json.dumps(payload)))
+        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(payload)))
 
         print(f"Requesting the key bundle of {partner}")
         bundle_request_payload = {
             "status": "request_key_bundle",
             "user_id": partner
         }
-        asyncio.create_task(self.network.send_payload(json.dumps(bundle_request_payload)))
+        asyncio.get_event_loop().create_task(self.network.send_payload(json.dumps(bundle_request_payload)))
 
     # Internal Logic
     def on_login_success(self):

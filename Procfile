@@ -1,1 +1,1 @@
-web: uvicorn NewServerCode.NewServer:app --host 0.0.0.0 --port ${PORT:-12345}
+web: uvicorn NewServerCode.secure_asgi_server:app --host 0.0.0.0 --port 12345

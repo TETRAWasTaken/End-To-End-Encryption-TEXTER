@@ -2,7 +2,6 @@ from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
                                QTextEdit, QLineEdit, QPushButton,
                                QSplitter, QListWidget, QLabel, QHBoxLayout)
 from PySide6.QtCore import Slot, Signal, Qt
-from Client.core.app_controller import AppController
 
 class ChatWindow(QMainWindow):
     """

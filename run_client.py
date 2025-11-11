@@ -4,17 +4,27 @@ import asyncio
 from PySide6.QtWidgets import QApplication
 from Client.core.app_controller import AppController
 
-def main():
-    app = QApplication(sys.argv)
 
-    loop = qasync.QEventLoop(app)
-    asyncio.set_event_loop(loop)
-
+async def main():
+    """
+    Asynchronous main function.
+    """
+    # Create the controller *after* the loop is running
     controller = AppController()
     controller.run()
 
-    with loop:
-        sys.exit(loop.run_forever())
+    # This is a clean way to keep the event loop
+    # running until the application is closed.
+    await asyncio.get_event_loop().create_future()
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        app = QApplication(sys.argv)
+
+        # qasync.run() will create and manage the event loop for you.
+        qasync.run(main())
+
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully
+        sys.exit(0)
