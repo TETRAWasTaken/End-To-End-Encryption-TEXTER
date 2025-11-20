@@ -21,45 +21,40 @@ jobs:
           python-version: '3.12'
 
       # ----------------------------------------------------------------
-      # 🛠️ FIX: Move Server Code to Root & Cleanup
+      # 🧹 CLEANUP STEP (Since files are already at root)
       # ----------------------------------------------------------------
-      - name: Prepare Deployment Package
+      - name: Prepare Server Build
         run: |
-          echo "Files before move:"
-          ls -la
-          
-          # 1. Move contents of the subfolder to the root directory
-          # We use 'cp -r' to copy content to avoid moving the folder into itself
-          cp -r End-To-End-Encryption-TEXTER-X3DH-Asynchronous-Update/* .
-          
-          # 2. Remove the original subfolder (now duplicate) to save space
-          rm -rf End-To-End-Encryption-TEXTER-X3DH-Asynchronous-Update
-
-          echo "Files at root after move (Procfile should be here):"
+          echo "Files at root before cleanup:"
           ls -la
 
-          # 3. Remove Client Code (Now located at root)
+          # 1. Remove Client Code & Legacy Files (to keep server light)
+          echo "Removing Client folders..."
           rm -rf Client
           rm -rf "Legacy Server"
-          rm run_client.py
-          
-          # 4. Swap Requirements File
-          # We assume requirements-server.txt is now at the root
-          if [ -f "requirements-server.txt" ]; then
-            rm -f requirements.txt
-            mv requirements-server.txt requirements.txt
-            echo "Swapped requirements-server.txt to requirements.txt"
-          else
-            echo "WARNING: requirements-server.txt not found at root!"
-          fi
+          rm -f run_client.py
 
-      # 🛠️ Optional: Install dependencies to verify they work (Server only)
+          # 2. Generate Server-Only Requirements
+          # Since your repo's requirements.txt has Client libs (PySide6), 
+          # we overwrite it with ONLY the server dependencies.
+          echo "Generating server-only requirements.txt..."
+          cat > requirements.txt <<EOF
+          uvicorn==0.38.0
+          websockets==15.0.1
+          psycopg2-binary==2.9.10
+          asyncio==3.4.3
+          EOF
+          
+          echo "--- Final Deployment Package ---"
+          ls -la
+
+      # 🛠️ Optional: Install dependencies to verify they work
       - name: Verify Server Dependencies
         run: |
           python -m venv antenv
           source antenv/bin/activate
           pip install -r requirements.txt
-                
+
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
@@ -82,10 +77,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-      
-      - name: Debug - List Files
-        run: ls -R
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -99,4 +91,4 @@ jobs:
         with:
           app-name: 'TEXTERE2EE'
           slot-name: 'Production'
-          package: '.'
+          package: '.' # Deploys the current directory (root)
