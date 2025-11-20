@@ -1,6 +1,7 @@
 from configparser import ConfigParser
 import psycopg2
 from psycopg2 import pool  # Explicitly import the pool module
+import os
 
 """
 This file contains the utility to connect to the postgres database
@@ -38,17 +39,27 @@ class DB_connect:
     def _connect(self):
         """
         Connect to the PostgreSQL database server and create a connection pool.
-        This pool will remain open until explicitly closed by the class instance.
-        :return: None
+        Prioritizes Environment Variables (for Azure), falls back to database.ini (local).
         """
-
         try:
-            config_params = self.load_config()
-
-            self.pool = pool.ThreadedConnectionPool(minconn=1,
-                                                    maxconn=10,
-                                                    **config_params
-                                                    )
+            # Check if we are running in an environment with DB config (like Azure)
+            if os.environ.get("DB_HOST"):
+                print("Connecting using Environment Variables...")
+                self.pool = pool.ThreadedConnectionPool(
+                    minconn=1,
+                    maxconn=10,
+                    host=os.environ.get("DB_HOST"),
+                    database=os.environ.get("DB_NAME"),
+                    user=os.environ.get("DB_USER"),
+                    password=os.environ.get("DB_PASSWORD"),
+                    port=os.environ.get("DB_PORT", "5432"),
+                    sslmode="require"  # Azure PostgreSQL requires SSL
+                )
+            else:
+                # Fallback for local development
+                print("Connecting using database.ini...")
+                config_params = self.load_config()
+                self.pool = pool.ThreadedConnectionPool(minconn=1, maxconn=10, **config_params)
 
         except (psycopg2.DatabaseError, Exception) as e:
             print(f"Error occurred while connecting to PostgreSQL DB: {e}")
