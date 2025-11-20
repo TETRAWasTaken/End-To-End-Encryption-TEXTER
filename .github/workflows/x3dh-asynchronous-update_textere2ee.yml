@@ -77,5 +77,4 @@ jobs:
         with:
           app-name: 'TEXTERE2EE'
           slot-name: 'Production'
-          # Note: If your code is in a subdirectory in the repo, add:
-          # package: 'End-To-End-Encryption-TEXTER-X3DH-Asynchronous-Update'
+          package: 'End-To-End-Encryption-TEXTER-X3DH-Asynchronous-Update'
