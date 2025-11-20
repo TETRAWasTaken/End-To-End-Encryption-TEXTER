@@ -61,10 +61,19 @@ class StorageManager:
             cur = conn.cursor()
 
             time_stamp_cr = datetime.datetime.now()
-            # Inserting Identity Key
+            # Inserting Identity Keys (Both Signing and DH)
+            # UPDATED QUERY: Added identity_key_dh
             cur.execute(
-                "INSERT INTO identity_key (user_id, identity_key, time_stamp_creation) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET identity_key = EXCLUDED.identity_key, time_stamp_creation = EXCLUDED.time_stamp_creation",
-                (user_id, KeyBundle['identity_key'], time_stamp_cr)
+                """
+                INSERT INTO identity_key (user_id, identity_key, identity_key_dh, time_stamp_creation) 
+                VALUES (%s, %s, %s, %s) 
+                ON CONFLICT (user_id) 
+                DO UPDATE SET 
+                    identity_key = EXCLUDED.identity_key, 
+                    identity_key_dh = EXCLUDED.identity_key_dh,
+                    time_stamp_creation = EXCLUDED.time_stamp_creation
+                """,
+                (user_id, KeyBundle['identity_key'], KeyBundle['identity_key_dh'], time_stamp_cr)
             )
 
             # Inserting Signed Pre-Key
@@ -110,13 +119,16 @@ class StorageManager:
         try:
             conn = self.DB.pool.getconn()
             cur = conn.cursor()
-            # Retrieving Identity Key
-            cur.execute("Select identity_key from identity_key where user_id = %s",
+            # Retrieving Identity Keys
+            # UPDATED QUERY: Added identity_key_dh
+            cur.execute("Select identity_key, identity_key_dh from identity_key where user_id = %s",
                         (user_id,))
             identity_key_row = cur.fetchone()
             if not identity_key_row:
                 return {} # Return empty if no identity key found
+            
             identity_key = identity_key_row[0]
+            identity_key_dh = identity_key_row[1] # Extract the DH key
 
             # Retrieving Signed_Pre_Key and Signature
             cur.execute(
@@ -157,11 +169,12 @@ class StorageManager:
 
             return {
                 "identity_key": identity_key,
+                "identity_key_dh": identity_key_dh, # Return it in the bundle
                 "signed_pre_key": signed_pre_key,
                 "signature": signature,
-                "one_time_pre_key": one_time_pre_key, # Will be None if not found
+                "one_time_pre_key": one_time_pre_key, 
                 "user_id": user_id,
-                "one_time_key_id": one_time_key_id, # Will be None if not found
+                "one_time_key_id": one_time_key_id, 
             }
         except Exception as e:
             if conn is not None:

@@ -16,7 +16,8 @@ CREATE TABLE User_Info (
 -- Storing as TEXT (Base64 encoded string).
 CREATE TABLE identity_key (
     user_id VARCHAR(100) PRIMARY KEY,
-    identity_key TEXT NOT NULL,
+    identity_key TEXT NOT NULL,       -- The Ed25519 Key (Signing)
+    identity_key_dh TEXT NOT NULL,    -- The X25519 Key (Diffie-Hellman) -- NEW COLUMN
     time_stamp_creation TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_user FOREIGN KEY(user_id) REFERENCES User_Info(user_id) ON DELETE CASCADE
 );

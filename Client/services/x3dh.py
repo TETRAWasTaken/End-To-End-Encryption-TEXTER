@@ -20,6 +20,7 @@ class X3DH:
         self._encryption_util = utils.EncryptionUtil()
 
         self.identity_key_private: ed25519.Ed25519PrivateKey | None = None
+        self.identity_key_dh_private: x25519.X25519PrivateKey | None = None # New DH Identity Key
         self.signed_pre_key_private: x25519.X25519PrivateKey | None = None
         self.one_time_pre_keys_private: Dict[int, x25519.X25519PrivateKey] = {}
 
@@ -33,10 +34,13 @@ class X3DH:
         # Generate Identity Key pair (IK) as an Ed25519 key for signing.
         self.identity_key_private, ik_public = self._encryption_util.generate_ed25519_key_pair()
 
+        # Generate Identity Key pair for DH (X25519) - The "Dual" Key
+        self.identity_key_dh_private, ik_dh_public = self._encryption_util.generate_x25519_key_pair()
+
         # Generate Signed Pre Key (SPK)
         self.signed_pre_key_private, spk_public = self._encryption_util.generate_x25519_key_pair() 
 
-        # Sign the SPK public key with the Identity Key.
+        # Sign the SPK public key with the Identity Key (Signing).
         spk_signature = self.identity_key_private.sign(spk_public.public_bytes(encoding=utils.serialization.Encoding.Raw, format=utils.serialization.PublicFormat.Raw))
 
         # Generate One Time Pre Keys (OPKs)
@@ -50,6 +54,7 @@ class X3DH:
 
         public_key_bundle = {
             "identity_key": ik_public,
+            "identity_key_dh": ik_dh_public, # Add DH key to bundle
             "signed_pre_key": spk_public,
             "signed_pre_key_signature": spk_signature,
             "one_time_pre_keys": opk_public_dict
@@ -62,23 +67,42 @@ class X3DH:
         Returns a dict of raw private keys for serialization
         after generation.
         """
-        if not all([self.identity_key_private, self.signed_pre_key_private]):
+        if not all([self.identity_key_private, self.signed_pre_key_private, self.identity_key_dh_private]):
             raise Exception("Private keys not generated or loaded.")
 
         return {
-            "identity_key": self.identity_key_private.private_bytes_raw(),
-            "signed_pre_key": self.signed_pre_key_private.private_bytes_raw(),
+            "identity_key": self.identity_key_private.private_bytes(
+                encoding=utils.serialization.Encoding.Raw,
+                format=utils.serialization.PrivateFormat.Raw,
+                encryption_algorithm=utils.serialization.NoEncryption()
+            ),
+            "identity_key_dh": self.identity_key_dh_private.private_bytes(
+                encoding=utils.serialization.Encoding.Raw,
+                format=utils.serialization.PrivateFormat.Raw,
+                encryption_algorithm=utils.serialization.NoEncryption()
+            ),
+            "signed_pre_key": self.signed_pre_key_private.private_bytes(
+                encoding=utils.serialization.Encoding.Raw,
+                format=utils.serialization.PrivateFormat.Raw,
+                encryption_algorithm=utils.serialization.NoEncryption()
+            ),
             "one_time_pre_keys": {
-                key_id: opk.private_bytes_raw()
+                key_id: opk.private_bytes(
+                    encoding=utils.serialization.Encoding.Raw,
+                    format=utils.serialization.PrivateFormat.Raw,
+                    encryption_algorithm=utils.serialization.NoEncryption()
+                )
                 for key_id, opk in self.one_time_pre_keys_private.items()
             }
         }
 
-    def load_private_keys(self, ik_priv_bytes, spk_priv_bytes):
+    def load_private_keys(self, ik_priv_bytes, spk_priv_bytes, ik_dh_priv_bytes=None):
         """
         Loads existing private keys from raw bytes.
         Used after login to re-populate the object.
         """
         self.identity_key_private = ed25519.Ed25519PrivateKey.from_private_bytes(ik_priv_bytes)
         self.signed_pre_key_private = x25519.X25519PrivateKey.from_private_bytes(spk_priv_bytes)
+        if ik_dh_priv_bytes:
+            self.identity_key_dh_private = x25519.X25519PrivateKey.from_private_bytes(ik_dh_priv_bytes)
         print("Successfully loaded private keys into X3DH object.")

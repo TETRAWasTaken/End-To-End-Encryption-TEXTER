@@ -119,20 +119,23 @@ class CryptServices:
         self._file_key = self._derive_file_key(password, salt)
 
         # 2. Save long-term private keys to encrypted keystore
-        private_keys = {
-            "identity_key": bytes_to_b64str(self.x3dh.identity_key_private.private_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PrivateFormat.Raw,
-                encryption_algorithm=serialization.NoEncryption()
-            )),
-            "signed_pre_key": bytes_to_b64str(self.x3dh.signed_pre_key_private.private_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PrivateFormat.Raw,
-                encryption_algorithm=serialization.NoEncryption()
-            ))
+        private_keys = self.x3dh.get_private_keys_for_saving()
+        
+        # Manually encode to Base64 to handle the nested dictionary structure
+        private_keys_b64 = {
+            "identity_key": bytes_to_b64str(private_keys["identity_key"]),
+            "identity_key_dh": bytes_to_b64str(private_keys["identity_key_dh"]),
+            "signed_pre_key": bytes_to_b64str(private_keys["signed_pre_key"]),
+            "one_time_pre_keys": {
+                k: bytes_to_b64str(v) 
+                for k, v in private_keys["one_time_pre_keys"].items()
+            }
         }
 
-        plaintext_bytes = json.dumps(private_keys).encode('utf-8')
+        # Serialize to JSON bytes
+        plaintext_bytes = json.dumps(private_keys_b64).encode('utf-8')
+        
+        # Encrypt
         ciphertext, nonce, tag = self.utils.encrypt_aes_gcm(self._file_key, plaintext_bytes)
 
         with open(self._key_file, 'w') as f:
@@ -178,7 +181,8 @@ class CryptServices:
 
             self.x3dh.load_private_keys(
                 ik_priv_bytes=b64str_to_bytes(private_keys['identity_key']),
-                spk_priv_bytes=b64str_to_bytes(private_keys['signed_pre_key'])
+                spk_priv_bytes=b64str_to_bytes(private_keys['signed_pre_key']),
+                ik_dh_priv_bytes=b64str_to_bytes(private_keys['identity_key_dh']) if 'identity_key_dh' in private_keys else None
             )
 
             # 2. Load State File (Dynamic State)
@@ -241,6 +245,10 @@ class CryptServices:
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw
             )),
+            "identity_key_dh": bytes_to_b64str(bundle["identity_key_dh"].public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )),
             "signed_pre_key": bytes_to_b64str(bundle["signed_pre_key"].public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw
@@ -262,6 +270,7 @@ class CryptServices:
         try:
             # --- Key Deserialization ---
             ik_str = bundle_json.get("identity_key")
+            ik_dh_str = bundle_json.get("identity_key_dh")
             spk_str = bundle_json.get("signed_pre_key")
             sig_str = bundle_json.get("signature")
 
@@ -274,8 +283,15 @@ class CryptServices:
             signature_bytes = b64str_to_bytes(sig_str)
             opk_bytes = b64str_to_bytes(bundle_json.get("one_time_pre_key")) if bundle_json.get("one_time_pre_key") else None
 
-            # Per X3DH, the Identity Key is an Ed25519 key used for signing.
+            # Ed25519 Identity Key (for verification)
             identity_key = ed25519.Ed25519PublicKey.from_public_bytes(ik_bytes)
+            
+            # X25519 Identity Key (for DH) - Essential for X3DH with `cryptography` lib
+            if ik_dh_str:
+                identity_key_dh = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(ik_dh_str))
+            else:
+                raise ValueError("Partner bundle missing X25519 Identity Key (identity_key_dh)")
+
             signed_pre_key = x25519.X25519PublicKey.from_public_bytes(spk_bytes)
 
             try:
@@ -287,7 +303,8 @@ class CryptServices:
 
             # Deserialize the bundle from b64 strings back into cryptography objects
             deserialized_bundle = {
-                "identity_key": identity_key, # This is now an Ed25519PublicKey
+                "identity_key": identity_key, 
+                "identity_key_dh": identity_key_dh, # Store DH Key
                 "signed_pre_key": signed_pre_key,
                 "one_time_pre_key": x25519.X25519PublicKey.from_public_bytes(opk_bytes) if opk_bytes else None,
                 "one_time_key_id": bundle_json.get("one_time_key_id")
@@ -305,28 +322,23 @@ class CryptServices:
 
         bundle = self.partner_bundles[partner_username]
 
-        # The partner's IK is Ed25519, we need to convert it to X25519 for DH.
-        p_ik_pub_ed = bundle['identity_key']
-        p_ik_pub_x = x25519.X25519PublicKey.from_public_bytes(
-            p_ik_pub_ed.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
-        )
-
+        # Use the partner's X25519 Identity Key for DH
+        p_ik_dh = bundle['identity_key_dh']
+        
         p_spk_pub = bundle['signed_pre_key']
         p_opk_pub = None
         opk_id = bundle.get("one_time_key_id")
         if opk_id is not None and bundle.get("one_time_pre_key"):
             p_opk_pub = bundle["one_time_pre_key"]
 
-        # Our IK is Ed25519, we need to convert it to X25519 for DH.
+        # Alice's Ephemeral Key
         ek_priv, ek_pub = self.utils.generate_x25519_key_pair()
-        ik_priv = x25519.X25519PrivateKey.from_private_bytes(self.x3dh.identity_key_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        ))
+        
+        # Alice's Identity Key (DH)
+        ik_priv = self.x3dh.identity_key_dh_private
 
         DH1 = ik_priv.exchange(p_spk_pub)
-        DH2 = ek_priv.exchange(p_ik_pub_x)
+        DH2 = ek_priv.exchange(p_ik_dh)
         DH3 = ek_priv.exchange(p_spk_pub)
 
         if p_opk_pub:
@@ -344,7 +356,7 @@ class CryptServices:
         self.counters.increment('x3dh_sessions_initiated_alice')
 
         x3dh_header = {
-            "ik_a": bytes_to_b64str(self.x3dh.identity_key_private.public_key().public_bytes(
+            "ik_a": bytes_to_b64str(ik_priv.public_key().public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw
             )),
@@ -356,7 +368,7 @@ class CryptServices:
         }
         return x3dh_header, SK
 
-    def _initiate_session_bob(self, partner_username: str, x3dh_header: dict) -> tuple[DoubleRatchetSession, bytes]:
+    def _initiate_session_bob(self, partner_username: str, x3dh_header: dict, dr_header: dict) -> tuple[DoubleRatchetSession, bytes]:
 
         """Performs the X3DH "Bob" role [cite: 945-954]"""
 
@@ -366,20 +378,13 @@ class CryptServices:
         if not p_ik_str or not p_ek_str:
             raise ValueError("Received incomplete X3DH header from partner.")
 
-        # Partner's IK is Ed25519, convert to X25519 for DH.
-        p_ik_pub_ed = ed25519.Ed25519PublicKey.from_public_bytes(b64str_to_bytes(p_ik_str))
-        p_ik_pub_x = x25519.X25519PublicKey.from_public_bytes(
-            p_ik_pub_ed.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
-        )
+        # Partner's IK is already X25519 (sent by Alice)
+        p_ik_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ik_str))
         p_ek_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ek_str))
         opk_id = x3dh_header.get('opk_id')
 
-        # Our IK is Ed25519, convert to X25519 for DH.
-        ik_priv = x25519.X25519PrivateKey.from_private_bytes(self.x3dh.identity_key_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption()
-        ))
+        # Bob's Keys
+        ik_priv = self.x3dh.identity_key_dh_private # Bob's X25519 Identity Key
         spk_priv = self.x3dh.signed_pre_key_private
         opk_priv = None
 
@@ -390,7 +395,7 @@ class CryptServices:
             else:
                 print(f"Warning: Alice used OPK {opk_id}, but we don't have it.")
 
-        DH1 = spk_priv.exchange(p_ik_pub_x)
+        DH1 = spk_priv.exchange(p_ik_pub)
         DH2 = ik_priv.exchange(p_ek_pub)
         DH3 = spk_priv.exchange(p_ek_pub)
 
@@ -402,8 +407,20 @@ class CryptServices:
 
         SK = self._X3DH_KDF(km)
 
-        # Create a new "Bob" session (no initial partner key)
+        # Create a new "Bob" session
         dr = DoubleRatchetSession(SK)
+        
+        # --- Perform Bob's initial Ratchet Step (Synchronization) ---
+        # Extract Alice's initial Ratchet Key (A1) from the DR header
+        alice_ratchet_pub_str = dr_header.get("dh_pub")
+        if not alice_ratchet_pub_str:
+             raise ValueError("Cannot initiate session: DR header missing dh_pub")
+
+        alice_ratchet_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(alice_ratchet_pub_str))
+
+        # Initialize the ratchet using our SPK private key and Alice's Ratchet Public Key
+        dr.DHRatchet_for_bob_initial(self.x3dh.signed_pre_key_private, alice_ratchet_pub)
+        
         self.sessions[partner_username] = dr
         self.counters.increment('x3dh_sessions_initiated_bob')
 
@@ -416,6 +433,8 @@ class CryptServices:
         """
         x3dh_header = None
         if partner_username not in self.sessions:
+            # This will raise an exception if the bundle isn't loaded yet, 
+            # which is handled by AppController checks.
             x3dh_header, sk = self._initiate_session_alice(partner_username)
 
         dr = self.sessions[partner_username]
@@ -433,9 +452,6 @@ class CryptServices:
     def decrypt_message(self, partner_username: str, payload: dict) -> str:
         """
         Decrypts an incoming message payload.
-        If it's the first message, it performs the X3DH handshake.
-        Returns "NEEDS_BUNDLE" if the partner's bundle is required to proceed.
-        Returns None if decryption fails for a known reason (e.g., old message).
         """
         x3dh_header = payload.get("x3dh_header")
         dr_header = payload.get("dr_header")
@@ -449,8 +465,9 @@ class CryptServices:
                 if partner_username not in self.partner_bundles:
                     return "NEEDS_BUNDLE"
 
-                dr, sk = self._initiate_session_bob(partner_username, x3dh_header)
-            
+                # Pass dr_header here so Bob can sync the ratchet
+                dr, sk = self._initiate_session_bob(partner_username, x3dh_header, dr_header)
+        
             dr = self.sessions[partner_username]
             plaintext_bytes = dr.RatchetDecrypt(dr_header, dr_body)
 
@@ -458,11 +475,9 @@ class CryptServices:
             self._save_state_file()
 
             return plaintext_bytes.decode('utf-8')
-        
+    
         except InvalidTag:
-            # This can happen if a message is old/out-of-order.
-            # The counter is already incremented inside RatchetDecrypt.
-            print("Could not decrypt message (likely old or out-of-order).")
+            print("Could not decrypt message (Integrity Check Failed). State rolled back.")
             return None
         except Exception as e:
             print(f"An unexpected error occurred during decryption: {e}")

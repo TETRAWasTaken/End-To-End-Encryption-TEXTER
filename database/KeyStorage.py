@@ -9,7 +9,6 @@ from database import StorageManager
 This is a Key storage protocol for the Server, this maintains the reliability 
 in storing the keys accurately
 """
-
 class KeyStorage:
     """
     This class is meant for retrieval and manipulation of file storage
@@ -19,6 +18,7 @@ class KeyStorage:
 
     def StoreUserKeyBundle(self, user_id: str,
                            identity_key: str,
+                           identity_key_dh: str, # Add this parameter
                            signed_pre_key: str,
                            signed_pre_key_signature: str,
                            one_time_pre_key: dict[str, str]) -> bool:
@@ -35,6 +35,7 @@ class KeyStorage:
         KeyBundlePayload = {
             "user_id": user_id,
             "identity_key": identity_key,
+            "identity_key_dh": identity_key_dh, # Add to payload
             "signed_pre_key": signed_pre_key,
             "signature": signed_pre_key_signature,
             "one_time_pre_key": one_time_pre_key

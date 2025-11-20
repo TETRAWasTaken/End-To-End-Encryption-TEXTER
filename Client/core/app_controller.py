@@ -145,14 +145,15 @@ class AppController(QObject):
                     self.chat_view.set_status(f"Ready to chat with {partner_username}", "green")
                     self.chat_view.set_input_enabled(True)
                 
-                # If there's a pending message, schedule it for processing
-                if partner_username in self.pending_messages:
-                    asyncio.call_soon(self.process_pending_message, partner_username)
+                    # If there's a pending message, schedule it for processing
+                    if partner_username in self.pending_messages:
+                        # FIX: Use self.network.loop instead of asyncio directly
+                        self.network.loop.call_soon_threadsafe(self.process_pending_message, partner_username)
 
 
-        elif status == "key_bundle_fail":
-            if self.chat_view:
-                self.chat_view.set_status("Selected partner cannot be contacted", "red")
+            elif status == "key_bundle_fail":
+                if self.chat_view:
+                    self.chat_view.set_status("Selected partner cannot be contacted", "red")
                 self.chat_view.set_input_enabled(False)
 
 
