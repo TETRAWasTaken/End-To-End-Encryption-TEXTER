@@ -28,15 +28,22 @@ class Server:
 
     def get_ssl_context(self) -> None:
         """
-        Loads the SSL context from the server.crt and server.key files.
-        Note: With uvicorn, prefer passing ssl args to uvicorn instead of using this.
+        Loads the SSL context.
+        On Azure (and most cloud providers), SSL is terminated at the load balancer.
+        The internal server should usually run on HTTP.
         """
-        try:
-            self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            self.ssl_context.load_cert_chain(certfile='server.crt', keyfile='server.key')
-        except Exception as e:
-            print(f"Error while loading SSL context: {e}")
-            sys.exit(1)
+        # If running locally, use certificates.
+        # If running on Azure, os.environ.get('WEBSITE_SITE_NAME') will likely be present.
+        if not os.environ.get('WEBSITE_SITE_NAME'): 
+            try:
+                self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                self.ssl_context.load_cert_chain(certfile='server.crt', keyfile='server.key')
+            except Exception as e:
+                print(f"Warning: SSL context not loaded (Local certs missing?): {e}")
+                self.ssl_context = None
+        else:
+            # On Azure, disable internal SSL
+            self.ssl_context = None
 
     def server_initiator(self) -> None:
         """
