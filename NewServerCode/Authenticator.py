@@ -6,27 +6,24 @@ import websockets
 import json
 import asyncio
 from NewServerCode import caching
-from database import KeyStorage
+from database import StorageManager
 
 class AuthenticatorAndKeyHandler:
     def __init__(self, caching: caching.caching,
-                 keystorage: KeyStorage.KeyStorage) -> None:
+                 storage_manager: StorageManager.StorageManager) -> None:
         """
         Initializes the authenticator.
         :param caching: The cache management system instance
-        :param keystorage: The key storage instance
+        :param storage_manager: The key storage instance
         """
         self.caching = caching
-        self.KeyStorage = keystorage
+        self.StorageManager = storage_manager
 
-    async def handle_authentication(self, websocket,
-                                    loop: asyncio.get_running_loop) -> bool | None:
+    async def handle_authentication(self, websocket) -> str | None:
         """
-        Handle the authentication of the client
-        :param websocket: The websocket instance
-        :param loop: The asyncio event loop
+        Handle the authentication of the client.
+        Returns the user_id on successful authentication, otherwise None.
         """
-        print(f"New connection from {websocket.remote_address}")
         authenticated_and_handled = False
         try:
             while not authenticated_and_handled:
@@ -35,35 +32,27 @@ class AuthenticatorAndKeyHandler:
                 command = payload.get("command")
 
                 if command == "login":
-                    print(f"Login requested by {websocket.remote_address}")
                     cred = payload.get("credentials", {})
-                    user = cred["username"]
-                    passw = cred["password"]
+                    user = cred.get("username")
+                    passw = cred.get("password")
 
                     if not user or not passw:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
-                    try:
-                        if self.caching.check_credentials(user, passw):
-                            await websocket.send(self.caching.payload("ok", "success"))
-                            authenticated_and_handled = True
-                            self.caching.add_active_user(websocket, user, None) # Use thread-safe method
-                            return True
-
-                        else:
-                            print(f"Credentials don't match for client {websocket.remote_address}")
-                            await websocket.send(self.caching.payload("error", "Credfail"))
-
-                    except KeyError:
-                        print(f"Account not found for {user if user else 'unknown'}")
-                        await websocket.send(self.caching.payload("error", "NAF"))
+                    
+                    if self.caching.check_credentials(user, passw):
+                        await websocket.send(self.caching.payload("ok", "success"))
+                        authenticated_and_handled = True
+                        self.caching.add_active_user(websocket, user, None)
+                        return user # Return user_id on success
+                    else:
+                        await websocket.send(self.caching.payload("error", "Credfail"))
+                        continue
 
                 elif command == "register":
-                    # This part of the logic can be updated similarly if needed.
-                    print(f"Registration requested by {websocket.remote_address}")
                     cred = payload.get("credentials", {})
-                    user = cred["username"]
-                    passw = cred["password"]
+                    user = cred.get("username")
+                    passw = cred.get("password")
 
                     if not user or not passw:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
@@ -71,38 +60,31 @@ class AuthenticatorAndKeyHandler:
 
                     if self.caching.check_credentials(user):
                         await websocket.send(self.caching.payload("error", "AAE"))
-                        print(f"Registration failed, username {user} already exists")
+                        continue
                     else:
-                        self.caching.insert_credentials(user, passw)
-                        await websocket.send(self.caching.payload("ok", "Registration Successful"))
-                        print(f"Registration successful for {user} from {websocket.remote_address}")
+                        if self.caching.insert_credentials(user, passw):
+                            await websocket.send(self.caching.payload("ok", "Registration Successful"))
 
-                        response = await websocket.recv()
-                        if response == "publish_keys":
-                            key_bundle = await websocket.recv()
-                            key_bundle = json.loads(key_bundle)
-                            print(f"Received key bundle from {websocket.remote_address}, user_id - {user}")
-                            if self.KeyStorage.StoreUserKeyBundle(user,
-                                                                    key_bundle["identity_key"],
-                                                                    key_bundle["signed_pre_key"],
-                                                                    key_bundle["signing_key"],
-                                                                    key_bundle["signed_pre_key_signature"],
-                                                                    {str(k): v for k, v in key_bundle["one_time_pre_keys"].items()}
-                                                                  ):
-                                print(f"Saved keys for {user} to database")
-                                await websocket.send(self.caching.payload("ok", "keys_ok"))
+                            response_payload = await websocket.recv()
+                            response = json.loads(response_payload)
+                            if response.get("command") == "publish_keys":
+                                key_bundle = response.get("bundle")
+                                if self.StorageManager.SaveKeyBundle(key_bundle, user):
+                                    await websocket.send(self.caching.payload("ok", "keys_ok"))
+                                else:
+                                    await websocket.send(self.caching.payload("error", "keys_fail"))
                             else:
-                                print(f"Error while saving keys for {user}")
-                                await websocket.send(self.caching.payload("error", "keys_fail"))
-
+                                await websocket.send(self.caching.payload("error", "Unknown command"))
                         else:
-                            print(f"Unknown command '{response}' from {websocket.remote_address}")
-                            await websocket.send(self.caching.payload("error", "Unknown command"))
-                else:
-                    print(f"Unknown command '{command}' from {websocket.remote_address}")
-                    await websocket.send(self.caching.payload("error", "Unknown command"))
+                            await websocket.send(self.caching.payload("error", "Registration failed on server."))
+                        continue
 
-        except websockets.exceptions.ConnectionClosed:
+
+                else:
+                    await websocket.send(self.caching.payload("error", "Unknown command"))
+                    continue
+
+        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
             print(f"Connection from {websocket.remote_address} closed during authentication.")
         except json.JSONDecodeError:
             print(f"Error decoding JSON from {websocket.remote_address}")
@@ -110,5 +92,5 @@ class AuthenticatorAndKeyHandler:
             print(f"Error in connection_handler for {websocket.remote_address}: {e}")
         finally:
             if not authenticated_and_handled:
-                await websocket.close()
-                return False
+                # This block now only runs on exceptions or graceful client disconnect
+                return None

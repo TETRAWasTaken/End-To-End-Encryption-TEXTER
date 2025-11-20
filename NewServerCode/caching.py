@@ -9,15 +9,13 @@ from database import DB_connect
 
 
 class caching:
-    def __init__(self, DB: DB_connect.DB_connect, cacheDB: DB_connect.DB_connect):
-        print("Initialising Caching system")
+    def __init__(self, DB: DB_connect.DB_connect):
         self.DB = DB
-        self.cacheDB = cacheDB
         self.ACTIVEUSERS = {} # { websocket : [ user_id , socket_handler ]}
         self._active_users_lock = threading.Lock() # Add a lock for ACTIVEUSERS
 
     @staticmethod
-    def payload(status: str, message: str | dict):
+    def payload(status: str, message):
         """
         Describes the general payload of each message sent
         :param status: The basic code of a sent message, can be "error", "ok"
@@ -31,8 +29,7 @@ class caching:
         }
         return json.dumps(payload)
 
-    @staticmethod
-    def message_payload(self, sender_user_id: str, receiver_user_id: str, text): # Removed staticmethod
+    def message_payload(self, sender_user_id: str, receiver_user_id: str, text):
         """
         A sub-json payload definition to send an encrypted text
         """
@@ -87,10 +84,6 @@ class caching:
             return list(self.ACTIVEUSERS.keys())
 
     # --- End of new thread-safe methods ---
-
-    # The old check_ACTIVEUSER is replaced by get_active_user_websocket.
-    # If you still need a method named check_ACTIVEUSER, you can alias it:
-    # check_ACTIVEUSER = get_active_user_websocket
 
     def check_credentials(self, user_id: str, *password: str) -> bool:
         """
@@ -156,7 +149,6 @@ class caching:
                     (user_id, password)
                 )
                 conn.commit()
-                print(f"New user '{user_id}' credentials saved to database.")
                 return True
 
         except (Exception, psycopg2.DatabaseError):
@@ -169,57 +161,51 @@ class caching:
                 self.DB.pool.putconn(conn)
 
 
-    def insert_into_textcache(self, Encrypted_text: bytes, receiver_id: str, sender_id: str, flag: bool = False) -> bool:
+    def insert_into_textcache(self, encrypted_text: dict, receiver_id: str, sender_id: str, flag: bool = False) -> bool:
         """
         insert the encrypted text into the text cache database.
-        :param Encrypted_text:
+        :param encrypted_text: The dictionary containing the encrypted payload.
         :param receiver_id:
         :param sender_id:
         :return bool:
         """
-        if not self.cacheDB.pool:
-            print("Database connection pool is not available. Cannot add credential.")
+        if not self.DB.pool:
+            print("Database connection pool is not available. Cannot add to cache.")
             return False
 
         conn = None
         try:
-            if flag:
-                conn = self.cacheDB.pool.getconn()
-                with conn.cursor() as cur:
+            # Convert the dictionary to a JSON string for storage.
+            encrypted_text_str = json.dumps(encrypted_text)
+            conn = self.DB.pool.getconn()
+            with conn.cursor() as cur:
+                if flag:
                     cur.execute(
-                        "INSERT INTO text_cache (text_cache, receiver_id, sender_id, time_stamp_creation, flag) VALUES (%s, %s, %s, %s)",
-                        (Encrypted_text, receiver_id, sender_id, datetime.datetime.now(), True)
+                        "INSERT INTO text_cache (text_cache, receiver_id, sender_id, time_stamp_creation, flag) VALUES (%s, %s, %s, %s, %s)",
+                        (encrypted_text_str, receiver_id, sender_id, datetime.datetime.now(), True)
                     )
-                    conn.commit()
-                    print(f"New text '{Encrypted_text}' saved to database.")
-                    return True
-
-            else:
-                conn = self.cacheDB.pool.getconn()
-                with conn.cursor() as cur:
+                else:
                     cur.execute(
                         "INSERT INTO text_cache (text_cache, receiver_id, sender_id, time_stamp_creation) VALUES (%s, %s, %s, %s)",
-                        (Encrypted_text, receiver_id, sender_id, datetime.datetime.now())
+                        (encrypted_text_str, receiver_id, sender_id, datetime.datetime.now())
                     )
-                    conn.commit()
-                    print(f"New text '{Encrypted_text}' saved to database.")
-                    return True
-
-        except (Exception, psycopg2.DatabaseError):
-            print(f"Error adding credential to database for user '{receiver_id}'.")
+                conn.commit()
+                return True
+        except (Exception, psycopg2.DatabaseError) as e:
+            print(f"Error adding text to cache for user '{receiver_id}': {e}")
             if conn:
                 conn.rollback()
             return False
         finally:
             if conn:
-                self.cacheDB.pool.putconn(conn)
+                self.DB.pool.putconn(conn)
 
-    def send_text(self, sender_id: str, receiver_id: str, text: bytes, *cache: bool) -> bool:
+    def send_text(self, sender_id: str, receiver_id: str, text: dict, *cache: bool) -> bool:
         """
         Redirect the text to the receiver.
         :param sender_id:
         :param receiver_id:
-        :param text:
+        :param text: The dictionary containing the encrypted payload.
         :return bool:
         """
         try:
@@ -229,53 +215,82 @@ class caching:
                 active_user_info = self.get_active_user_info(socket_ws)
                 if active_user_info and active_user_info[1]: # active_user_info[1] is the socket_handler
                     socket_handler = active_user_info[1]
-                    command_payload = {'method': 'send_text',
-                                       'args': json.loads(self.message_payload(self, sender_id, receiver_id, text))}
+                    # message_payload returns a JSON string, we need a dict for the command queue
+                    message_dict = json.loads(self.message_payload(sender_id, receiver_id, text))
+                    command_payload = {'method': 'send_text', 'args': message_dict}
                     socket_handler.command_queue.put(command_payload)
 
                     # Only cache if not explicitly told not to (i.e., if cache is empty or False)
                     if not cache or cache[0] is False:
-                        self.insert_into_textcache(text, sender_id, receiver_id, True)
+                        self.insert_into_textcache(text, receiver_id, sender_id, True)
                     return True
                 else:
-                    # User is active, but handler not fully set up or missing (shouldn't happen with proper flow)
+                    # User is active, but handler not fully set up or missing
                     if not cache or cache[0] is False:
-                        self.insert_into_textcache(text, sender_id, receiver_id)
+                        self.insert_into_textcache(text, receiver_id, sender_id)
                     return False
             else:
                 # User is not active, cache the message
-                self.insert_into_textcache(text, sender_id, receiver_id)
+                self.insert_into_textcache(text, receiver_id, sender_id)
                 return False
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
             return False # Ensure a boolean is always returned
 
-    def retrieve_text_cache(self, sender_id: str, receiver_id: str):
+    def retrieve_cached_messages(self, receiver_id: str, sender_id: str | None = None):
         """
-        Retrieve the text cache from the database.
-        and pushes the text to the client.
+        Retrieves cached messages for a user.
+        If sender_id is provided, it fetches messages only from that sender.
+        If sender_id is None, it fetches all unread messages from all senders.
         """
+        conn = None
         try:
-            conn = self.cacheDB.pool.getconn()
-            with conn.cursor() as cur:
-                cur.execute("SELECT text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = %s ORDER BY time_stamp_creation DESC",
-                            (receiver_id, sender_id, False))
-                result = cur.fetchall()
-
-            if result:
-                for i in result:
-                    # Pass True to send_text to indicate it's from cache, so it doesn't re-cache
-                    if self.send_text(sender_id, receiver_id, i[0], True):
-                        cur.execute("UPDATE text_cache SET flag = %s, time_stamp_last_usage = %s WHERE time_stamp_creation = %s AND text_cache = %s",
-                                    (True, datetime.datetime.now(), i[1], i[0]))
-                    else:
-                        print("Error while sending text to client.")
-                conn.commit() # Commit updates after the loop
+            conn = self.DB.pool.getconn()
+            
+            senders_to_check = []
+            if sender_id:
+                senders_to_check.append(sender_id)
             else:
-                print("No text found in cache.")
+                # Get all distinct senders who have messages for the receiver
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT DISTINCT sender_id FROM text_cache WHERE receiver_id = %s AND flag = FALSE",
+                        (receiver_id,)
+                    )
+                    senders_to_check = [row[0] for row in cur.fetchall()]
+
+            if not senders_to_check:
+                return
+
+            print(f"Checking cached messages for {receiver_id} from sender(s): {senders_to_check}")
+
+            with conn.cursor() as cur:
+                for a_sender_id in senders_to_check:
+                    cur.execute(
+                        "SELECT text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = FALSE ORDER BY time_stamp_creation ASC",
+                        (receiver_id, a_sender_id)
+                    )
+                    results = cur.fetchall()
+
+                    if not results:
+                        continue
+                    
+                    with conn.cursor() as update_cur:
+                        for text_cache, time_stamp in results:
+                            text_dict = json.loads(text_cache)
+                            if self.send_text(a_sender_id, receiver_id, text_dict, True):
+                                update_cur.execute(
+                                    "UPDATE text_cache SET flag = TRUE, time_stamp_last_usage = %s WHERE receiver_id = %s AND sender_id = %s AND time_stamp_creation = %s",
+                                    (datetime.datetime.now(), receiver_id, a_sender_id, time_stamp)
+                                )
+                            else:
+                                print(f"Error while sending cached text from {a_sender_id} to {receiver_id}.")
+            conn.commit()
 
         except Exception as e:
-            print(f"Error in caching.retrieve_text_cache: {e}")
+            print(f"Error in caching.retrieve_cached_messages: {e}")
+            if conn:
+                conn.rollback()
         finally:
             if conn:
-                self.cacheDB.pool.putconn(conn)
+                self.DB.pool.putconn(conn)

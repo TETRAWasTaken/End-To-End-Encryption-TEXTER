@@ -63,24 +63,24 @@ class StorageManager:
             time_stamp_cr = datetime.datetime.now()
             # Inserting Identity Key
             cur.execute(
-                "INSERT INTO identity_key (user_id, identity_key, time_stamp_creation) VALUES (%s, %s, %s)",
-                (user_id, KeyBundle['identity_key'], time_stamp_cr),
+                "INSERT INTO identity_key (user_id, identity_key, time_stamp_creation) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET identity_key = EXCLUDED.identity_key, time_stamp_creation = EXCLUDED.time_stamp_creation",
+                (user_id, KeyBundle['identity_key'], time_stamp_cr)
             )
 
             # Inserting Signed Pre-Key
             cur.execute(
                 "INSERT INTO signed_key (user_id, signed_pre_key, signature, time_stamp_creation) VALUES (%s, %s, %s, %s)",
-                (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr),
+                (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr)
             )
 
             # Inserting One-time Pre Keys (executemany expects an iterable of tuples)
             one_time_rows = [
-                (user_id, k, v, time_stamp_cr)
-                for k, v in KeyBundle['one_time_pre_key'].items() 
+                (user_id, k, v, time_stamp_cr, False) # Add 'is_used = FALSE'
+                for k, v in KeyBundle['one_time_pre_keys'].items()
             ]
             if one_time_rows:
                 cur.executemany(
-                    "INSERT INTO onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation) VALUES (%s, %s, %s, %s)",
+                    "INSERT INTO onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation, is_used) VALUES (%s, %s, %s, %s, %s)",
                     one_time_rows,
                 )
 
@@ -113,7 +113,10 @@ class StorageManager:
             # Retrieving Identity Key
             cur.execute("Select identity_key from identity_key where user_id = %s",
                         (user_id,))
-            identity_key = cur.fetchone()[0]
+            identity_key_row = cur.fetchone()
+            if not identity_key_row:
+                return {} # Return empty if no identity key found
+            identity_key = identity_key_row[0]
 
             # Retrieving Signed_Pre_Key and Signature
             cur.execute(
@@ -155,7 +158,7 @@ class StorageManager:
             return {
                 "identity_key": identity_key,
                 "signed_pre_key": signed_pre_key,
-                "signed_pre_key_signature": signature,
+                "signature": signature,
                 "one_time_pre_key": one_time_pre_key, # Will be None if not found
                 "user_id": user_id,
                 "one_time_key_id": one_time_key_id, # Will be None if not found

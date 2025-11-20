@@ -6,7 +6,7 @@ import threading
 from typing import Callable, Awaitable, Dict, Any
 
 from NewServerCode import Authenticator
-from database import StorageManager, KeyStorage
+from database import StorageManager
 from database import DB_connect
 from NewServerCode import Socket
 from NewServerCode import caching as caching_module
@@ -16,10 +16,8 @@ class Server:
     def __init__(self):
         # Objects
         self.DB = None
-        self.cacheDB = None
         self.caching = None
         self.StorageManager = None
-        self.KeyStorage = None
         self.authandkeyhandler = None
         self.ssl_context = None
         self.host = '::1'
@@ -45,11 +43,9 @@ class Server:
         Initializes the server resources.
         """
         self.DB = DB_connect.DB_connect()
-        self.cacheDB = DB_connect.DB_connect()
-        self.caching = caching_module.caching(self.DB, self.cacheDB)
+        self.caching = caching_module.caching(self.DB)
         self.StorageManager = StorageManager.StorageManager(self.DB)
-        self.KeyStorage = KeyStorage.KeyStorage(self.StorageManager)
-        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.KeyStorage)
+        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.StorageManager)
         print("Database connection established.")
 
         self.UTC_Thread = threading.Thread(target=self.user_thread_checker, name="UserThreadChecker")
@@ -62,20 +58,30 @@ class Server:
         :param websocket: websocket connection instance of the client
         :return: None
         """
-        loop = asyncio.get_running_loop()
-        if await self.authandkeyhandler.handle_authentication(websocket, loop):
+        user_id = await self.authandkeyhandler.handle_authentication(websocket)
+        if user_id:
+            loop = asyncio.get_running_loop()
             socket_handler = Socket.Server(websocket=websocket,
                                            caching=self.caching,
                                            loop=loop,
-                                           keystorage=self.KeyStorage)
-            socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
+                                           storage_manager=self.StorageManager)
+            self.caching.update_active_user_handler(websocket, socket_handler)
+            
+            # Start the thread first, so it's ready to process the queue.
+            socket_handler.associated_thread = threading.Thread(target=socket_handler.start, name=f"SocketHandler_{user_id}")
             socket_handler.associated_thread.daemon = True
             socket_handler.associated_thread.start()
-            self.caching.update_active_user_handler(websocket, socket_handler)
-            await asyncio.to_thread(socket_handler.associated_thread.join)
+
+            # Now, with the thread running, trigger retrieval of cached messages.
+            self.caching.retrieve_cached_messages(receiver_id=user_id)
+            
+            # Wait for the thread to signal that it's finished.
+            await socket_handler.finished.wait()
         else:
-            await websocket.send((self.caching.payload("error", "Authentication Failed")))
-            await websocket.close()
+            # If authentication fails, handle_authentication now returns None
+            # and has already closed the connection.
+            print("Authentication failed. Connection closed.")
+
 
     def user_thread_checker(self) -> None:
         """

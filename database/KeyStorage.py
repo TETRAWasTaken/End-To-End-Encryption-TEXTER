@@ -18,11 +18,10 @@ class KeyStorage:
         self.StorageManager= storagemanager
 
     def StoreUserKeyBundle(self, user_id: str,
-                           identity_key: x25519.X25519PublicKey,
-                           signed_pre_key: x25519.X25519PublicKey,
-                           signing_key: bytes,
-                           signed_pre_key_signature: bytes,
-                           one_time_pre_key: dict[str, x25519.X25519PublicKey]) -> bool:
+                           identity_key: str,
+                           signed_pre_key: str,
+                           signed_pre_key_signature: str,
+                           one_time_pre_key: dict[str, str]) -> bool:
         """
         Calls the Storage manager to save the KeyBundle to the database.
         :param user_id:
@@ -37,7 +36,6 @@ class KeyStorage:
             "user_id": user_id,
             "identity_key": identity_key,
             "signed_pre_key": signed_pre_key,
-            "signing_key": signing_key,
             "signature": signed_pre_key_signature,
             "one_time_pre_key": one_time_pre_key
         }

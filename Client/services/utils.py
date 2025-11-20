@@ -2,10 +2,11 @@ from typing import Optional, Tuple
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import os
+import threading
 
 # Constants
 ROOT_KEY_LEN = 32
@@ -15,10 +16,53 @@ AES_GCM_NONCE_BYTES = 12  # 96 bits
 AES_GCM_TAG_BYTES = 16  # 128 bits
 HKDF_HASH_ALGORITHM = hashes.SHA256()
 
+class CryptoCounters:
+    """
+    A thread-safe singleton for tracking cryptographic statistics.
+    """
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(CryptoCounters, cls).__new__(cls)
+                cls._instance.reset()
+        return cls._instance
+
+    def reset(self):
+        self.x3dh_sessions_initiated_alice = 0
+        self.x3dh_sessions_initiated_bob = 0
+        self.messages_encrypted = 0
+        self.messages_decrypted = 0
+        self.decryption_failures_invalid_tag = 0
+        self.skipped_messages_processed = 0
+        self.old_messages_discarded = 0
+        self.bundle_validation_failures = 0
+
+    def increment(self, counter_name):
+        with self._lock:
+            if hasattr(self, counter_name):
+                setattr(self, counter_name, getattr(self, counter_name) + 1)
+
+    def __str__(self):
+        return (
+            "--- Crypto Statistics ---\n"
+            f"X3DH Handshakes (Alice): {self.x3dh_sessions_initiated_alice}\n"
+            f"X3DH Handshakes (Bob):   {self.x3dh_sessions_initiated_bob}\n"
+            f"Messages Encrypted:      {self.messages_encrypted}\n"
+            f"Messages Decrypted:      {self.messages_decrypted}\n"
+            f"Skipped Msgs Processed:  {self.skipped_messages_processed}\n"
+            f"Old Msgs Discarded:      {self.old_messages_discarded}\n"
+            f"Bundle Failures:         {self.bundle_validation_failures}\n"
+            f"DECRYPTION FAILURES:     {self.decryption_failures_invalid_tag}\n"
+            "-------------------------"
+        )
 
 class EncryptionUtil():
     def __init__(self):
-        pass
+        self.counters = CryptoCounters()
+
     def generate_x25519_key_pair(self):
         """
         Generates a private and public key pair for use in the X25519 algorithm.
@@ -69,6 +113,7 @@ class EncryptionUtil():
             encryptor.authenticate_additional_data(associated_data)
         ciphertext = encryptor.update(plaintext) + encryptor.finalize()
         tag = encryptor.tag
+        self.counters.increment('messages_encrypted')
         return ciphertext, nonce, tag
 
     def decrypt_aes_gcm(self, key: bytes, ciphertext: bytes, nonce: bytes, tag: bytes,
@@ -87,4 +132,7 @@ class EncryptionUtil():
         decryptor = cipher.decryptor()
         if associated_data:
             decryptor.authenticate_additional_data(associated_data)
-        return decryptor.update(ciphertext) + decryptor.finalize()
+        
+        plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        self.counters.increment('messages_decrypted')
+        return plaintext

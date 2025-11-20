@@ -80,7 +80,6 @@ class NetworkService(QObject):
         }
         return json.dumps(payload)
 
-    @staticmethod
     def message_payload(self, sender_user_id: str, receiver_user_id: str, text) -> json.dumps:
         """
         A sub-json payload definition to send an encrypted text
@@ -100,7 +99,7 @@ class NetworkService(QObject):
         try:
             self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context)
             self.connected.emit()
-            await self.listen()
+            self.schedule_task(self.listen())
         except websockets.exceptions.ConnectionClosed as e:
             self.error_occured.emit(f"Connection Closed : {str(e)}")
             self.disconnected.emit()
@@ -116,11 +115,15 @@ class NetworkService(QObject):
             async for message in self.websocket:
                 try:
                     message = json.loads(message)
+                    print(f"Message Received : {message}")
                     self.message_received.emit(message)
                 except json.JSONDecodeError: # Catching the error inside the loop
                     self.error_occured.emit(f"Invalid JSON Received : {message}")
+                except Exception as e:
+                    self.error_occured.emit(f"Error in listen : {str(e)}")
         except websockets.exceptions.ConnectionClosed:
             self.disconnected.emit()
+            print("Server Disconnected")
         except Exception as e:
             self.error_occured.emit(f"Error in listen : {str(e)}")
             self.disconnected.emit()

@@ -25,7 +25,6 @@ class Server:
         self.cacheDB = None
         self.caching = None
         self.StorageManager = None
-        self.KeyStorage = None
         self.authandkeyhandler = None
         self.ssl_context = None
         self.host = '::1'
@@ -60,7 +59,7 @@ class Server:
         self.cacheDB = DB_connect.DB_connect()
         self.caching = caching.caching(self.DB, self.cacheDB)
         self.StorageManager = StorageManager.StorageManager(self.DB)
-        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.KeyStorage)
+        self.authandkeyhandler = Authenticator.AuthenticatorAndKeyHandler(self.caching, self.StorageManager)
         print("Database connection established.")
 
         self.UTC_Thread = threading.Thread(target = self.user_thread_checker)
@@ -100,11 +99,11 @@ class Server:
         """
         loop = asyncio.get_running_loop()
         if await self.authandkeyhandler.handle_authentication(websocket, loop):
-            socket_handler = Socket.Server(websocket=websocket, caching=self.caching, loop=loop)
+            socket_handler = Socket.Server(websocket=websocket, caching=self.caching, loop=loop, storage_manager=self.StorageManager)
+            self.caching.update_active_user_handler(websocket, socket_handler)
             socket_handler.associated_thread = threading.Thread(target=socket_handler.start)
             socket_handler.associated_thread.daemon = True
             socket_handler.associated_thread.start()
-            self.caching.ACTIVEUSERS[websocket][1].append(socket_handler)
 
         else:
             await websocket.send((self.caching.payload("error", "Authentication Failed")))
@@ -117,12 +116,14 @@ class Server:
         """
         while True:
             try:
-                for i in list(self.caching.ACTIVEUSERS.keys()):
-                    socket_handler_instance = self.caching.ACTIVEUSERS[i][1]
-                    if not socket_handler_instance.associated_thread.is_alive():
-                        socket_handler_instance.associated_thread.join(timeout=1.0)
-                        print(f"User {i} has been disconnected and all threads are cleared.")
-                        del self.caching.ACTIVEUSERS[i]
+                for i in list(self.caching.get_all_active_users_websockets()):
+                    user_info = self.caching.get_active_user_info(i)
+                    if user_info and user_info[1]:
+                        socket_handler_instance = user_info[1]
+                        if not socket_handler_instance.associated_thread.is_alive():
+                            socket_handler_instance.associated_thread.join(timeout=1.0)
+                            print(f"User {user_info[0]} has been disconnected and all threads are cleared.")
+                            self.caching.remove_active_user(i)
                 time.sleep(5)
             except (RuntimeError, KeyError) as e:
                 print(f"Error in user_thread_checker: {e}")

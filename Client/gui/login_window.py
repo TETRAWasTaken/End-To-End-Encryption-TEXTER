@@ -33,7 +33,7 @@ class LoginWindow(QWidget):
         layout.addWidget(self.user_input)
         layout.addWidget(self.pass_input)
 
-        btn_layout = QHBoxLayout(self)
+        btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.login_btn)
         btn_layout.addWidget(self.register_btn)
 

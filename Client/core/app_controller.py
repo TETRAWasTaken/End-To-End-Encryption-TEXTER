@@ -15,6 +15,7 @@ class AppController(QObject):
         self.username = None
         self.current_state = "Login"
         self.public_bundle = None
+        self.pending_messages = {} # Cache for messages waiting for a bundle
 
         # Create Services
         self.network = NetworkService()
@@ -73,7 +74,7 @@ class AppController(QObject):
         if hasattr(view, 'set_status'):
             view.set_status(f"Error : {err_message}", "red")
 
-    @Slot()
+    @Slot(dict)
     def handle_network_message(self, payload: dict):
         """
         Handles all the incoming payload from the server
@@ -104,13 +105,17 @@ class AppController(QObject):
         elif status == "Encrypted":
             if self.chat_view:
                 sender = message.get("sender_user_id")
-                # Ensure we only process messages not from ourselves
                 if sender != self.username:
-                    encrypted_payload = message.get("text")  # 'text' holds the crypto dict
+                    encrypted_payload = message.get("text")
+                    
+                    decryption_result = self.crypt_services.decrypt_message(sender, encrypted_payload)
 
-                    # Decrypt
-                    plaintext = self.crypt_services.decrypt_message(sender, encrypted_payload)
-                    self.chat_view.add_message(sender, plaintext)
+                    if decryption_result == "NEEDS_BUNDLE":
+                        # Cache the message and request the bundle
+                        self.pending_messages[sender] = encrypted_payload
+                        self.request_bundle_for_partner(sender)
+                    elif decryption_result is not None:
+                        self.chat_view.add_message(sender, decryption_result)
 
             else:
                 print("Received chat message but no chat view is active.")
@@ -119,23 +124,13 @@ class AppController(QObject):
             if message == "User Available":
                 if self.chat_view:
                     self.chat_view.set_status("User is available, fetching keys...", "blue")
-                    partner = self.chat_view.current_partner
-                    print(f"Requesting the key bundle of {partner}")
-                    bundle_request_payload = {
-                        "status": "request_key_bundle",
-                        "user_id": partner
-                    }
-                    self.network.send_payload(json.dumps(bundle_request_payload))
+                    self.request_bundle_for_partner(self.chat_view.current_partner)
+
             elif message == "User Not Online":
                 if self.chat_view:
                     self.chat_view.set_status("User is offline. They will receive the message upon login.", "orange")
-                    partner = self.chat_view.current_partner
-                    print(f"Requesting the key bundle of {partner}")
-                    bundle_request_payload = {
-                        "status": "request_key_bundle",
-                        "user_id": partner
-                    }
-                    self.network.send_payload(json.dumps(bundle_request_payload))
+                    self.request_bundle_for_partner(self.chat_view.current_partner)
+
             elif message == "User Not Available":
                 if self.chat_view:
                     self.chat_view.set_status("User not available", "red")
@@ -145,11 +140,15 @@ class AppController(QObject):
             partner_username = message.get("user_id")
             if partner_username and self.crypt_services and partner_username != self.username:
                 self.crypt_services.store_partner_bundle(partner_username, message)
-                print(f"Cached and deserialized bundle for {partner_username}")
 
                 if self.chat_view and self.chat_view.current_partner == partner_username:
                     self.chat_view.set_status(f"Ready to chat with {partner_username}", "green")
                     self.chat_view.set_input_enabled(True)
+                
+                # If there's a pending message, schedule it for processing
+                if partner_username in self.pending_messages:
+                    asyncio.call_soon(self.process_pending_message, partner_username)
+
 
         elif status == "key_bundle_fail":
             if self.chat_view:
@@ -208,14 +207,21 @@ class AppController(QObject):
         Called by handle_network_message after registration succesful
         """
         if self.public_bundle:
-            self.network.send_raw("publish_keys")
-            self.network.send_payload(json.dumps(self.public_bundle))
+            payload = {
+                "command": "publish_keys",
+                "bundle": self.public_bundle
+            }
+            self.network.send_payload(json.dumps(payload))
             self.public_bundle = None
         else:
             print("Error: Public key bundle not found.")
 
     @Slot(str, str)
     def handle_send_message(self, partner: str, text: str):
+        """
+        Encrypts and sends a message. The check here is for the partner bundle,
+        as the session for the initiator is created lazily inside encrypt_message.
+        """
         if partner not in self.crypt_services.partner_bundles:
             self.chat_view.set_status(f"Cannot send message. No key bundle for {partner}. Please re-select them.", "red")
             return
@@ -235,13 +241,41 @@ class AppController(QObject):
     @Slot(str)
     def handle_partner_select(self, partner: str):
         """
-        Called when user selects a partner in the chat window
+        Called when user selects a partner in the chat window.
+        Checks for an existing session before requesting a new bundle.
         """
+        # Check if a session already exists for this partner
+        if self.crypt_services and partner in self.crypt_services.sessions:
+            if self.chat_view:
+                self.chat_view.set_status(f"Ready to chat with {partner}", "green")
+                self.chat_view.set_input_enabled(True)
+            return
+
+        # If no session exists, proceed with requesting user availability and bundle
         payload = {
             "status": "User_Select",
             "user_id": partner
         }
         self.network.send_payload(json.dumps(payload))
+
+    def request_bundle_for_partner(self, partner_name: str):
+        """Requests a key bundle for a specific partner."""
+        bundle_request_payload = {
+            "status": "request_key_bundle",
+            "user_id": partner_name
+        }
+        self.network.send_payload(json.dumps(bundle_request_payload))
+
+    def process_pending_message(self, partner_name: str):
+        """Processes a cached message after a bundle has been received."""
+        encrypted_payload = self.pending_messages.pop(partner_name, None)
+        if encrypted_payload:
+            decryption_result = self.crypt_services.decrypt_message(partner_name, encrypted_payload)
+            if decryption_result not in ("NEEDS_BUNDLE", None):
+                self.chat_view.add_message(partner_name, decryption_result)
+            else:
+                print(f"Error: Decryption failed for pending message from {partner_name}.")
+
 
     # Internal Logic
     def on_login_success(self):

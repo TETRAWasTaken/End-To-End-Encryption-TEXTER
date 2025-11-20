@@ -8,7 +8,7 @@ import time
 from typing import Optional, Callable
 from NewServerCode import caching
 import json
-from database import KeyStorage
+from database import StorageManager
 
 
 def b64_encode(data: Optional[bytes]) -> Optional[str]:
@@ -18,22 +18,31 @@ def b64_encode(data: Optional[bytes]) -> Optional[str]:
     if data is None: return None
     return base64.b64encode(data).decode("utf-8")
 
+def to_bytes(data) -> Optional[bytes]:
+    """
+    Safely converts memoryview or bytes to bytes, handling None.
+    """
+    if data is None: return None
+    return bytes(data)
+
 class Server:
     def __init__(self, websocket,
                  caching: caching.caching,
                  loop: asyncio.AbstractEventLoop,
-                 keystorage: KeyStorage.KeyStorage):
+                 storage_manager: StorageManager.StorageManager):
         self.websocket = websocket
         self.caching = caching
         self.loop = loop
-        self.KeyStorage = keystorage
+        self.StorageManager = storage_manager
         self.command_queue = queue.Queue()
         self.associated_threads = None
         self.kill_signal = False
         self.receiver = None # The user on other end of the conversation
         self.user_id = None # The user id of the current user
+        self.finished = asyncio.Event() # Event to signal thread completion
+
         if self.caching is None:
-            quit()
+            raise ValueError("Caching object is not initialized")
 
     def _process_command(self) -> None:
         """
@@ -42,7 +51,7 @@ class Server:
         """
         while not self.kill_signal:
             try:
-                command_payload = self.command_queue.get()
+                command_payload = self.command_queue.get(timeout=1)
                 method_name = command_payload.get("method")
                 args = command_payload.get("args", ())
 
@@ -53,45 +62,42 @@ class Server:
                     else:
                         continue
                 self.command_queue.task_done()
+            except queue.Empty:
+                continue
             except Exception as e:
                 print(f"Error in _process_command: {e}")
                 pass
 
     def start(self) -> None:
         """
-        Initiates the client communication interface
-        :return None:
+        Initiates the client communication interface. This is the main method for the thread.
         """
-        print(f"Socket instance started for websocket {self.websocket.remote_address}")
         try:
-            self.user_id = self.caching.ACTIVEUSERS[self.websocket][0]
-            user_info = self.caching.get_active_user_info(self.websocket) # Use thread-safe method
+            user_info = self.caching.get_active_user_info(self.websocket)
             if user_info:
                 self.user_id = user_info[0]
                 self.processing()
             else:
-                raise KeyError("User not found in ACTIVEUSERS after authentication.")
-        except KeyError:
-             print(f"Error: User not found in ACTIVEUSERS for websocket {self.websocket.remote_address}. Closing connection.")
+                raise KeyError("User not found in ACTIVEUSERS immediately after start.")
         except Exception as e:
-            print(f"Error in Socket.Server.start: {e}")
+            print(f"Error in Socket.Server.start for {self.user_id}: {e}")
         finally:
             print(f"Socket instance for {self.user_id or self.websocket.remote_address} is shutting down.")
-            self.kill_signal = True # Ensure all loops in threads terminate
-            asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
+            self.kill_signal = True
+            # Signal the main event loop that this thread's work is done.
+            self.loop.call_soon_threadsafe(self.finished.set)
+
 
     def processing(self) -> None:
         """
         Initiates the further communication process with the client.
-        :return None:
         """
-        listener_thread = threading.Thread(target=self.listen)
-        processor_thread = threading.Thread(target=self._process_command)
+        listener_thread = threading.Thread(target=self.listen, name=f"Listener_{self.user_id}")
+        processor_thread = threading.Thread(target=self._process_command, name=f"Processor_{self.user_id}")
 
         listener_thread.start()
         processor_thread.start()
-        
-        # Block until the listener thread terminates (on disconnect)
+
         listener_thread.join()
         processor_thread.join()
 
@@ -116,8 +122,9 @@ class Server:
                 elif payload.get("status") == "request_key_bundle":
                     command_payload = {'method': 'handle_key_bundle_request', 'args': payload}
                     self.command_queue.put(command_payload)
-        except (ConnectionError, websockets.exceptions.ConnectionClosed) as e:
-            print(f"Client {self.user_id} disconnected: {e}")
+
+        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
+            print(f"Client {self.user_id} disconnected.")
         except Exception as e:
             print(f"Unexpected error in listen thread for {self.user_id}: {e}")
         finally:
@@ -137,16 +144,17 @@ class Server:
             if self.caching.send_text(sender_id, recv_id, message):
                 print(f"Text sent to {recv_id} from {sender_id}")
             else:
-                print(f"Error while sending text to {recv_id} from {sender_id}")
+                print(f"User {recv_id} is offline. Message from {sender_id} has been cached.")
         except Exception as e:
             print(f"Error in caching.send_text: {e}")
 
     def send_text(self, msg_payload: dict):
         """
         Send the text to the client
-        :param msg_payload:
+        :param msg_payload: A dictionary representing the message payload.
         """
         try:
+            # Ensure the dictionary is converted to a JSON string before sending.
             asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(msg_payload)), self.loop)
         except Exception as e:
             print(f"Error in socket.send_text: {e}")
@@ -170,13 +178,12 @@ class Server:
             if self.caching.get_active_user_websocket(user_id): # Use thread-safe method
                 payload = self.caching.payload("User_Select", 'User Available') # Using client's expected message
                 self.receiver = user_id
-                self.caching.retrieve_text_cache(self.receiver, self.user_id)
             else:
                 payload = self.caching.payload('User_Select', 'User Not Online') # Using client's expected message
             asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
 
         except Exception as e:
-            print(f"Error in caching.select_user: {e}")
+            print(f"Error in select_user: {e}")
 
     def handle_key_bundle_request(self, payload: dict):
         """
@@ -186,27 +193,17 @@ class Server:
         if not partner_id:
             return
 
-        print(f"Sending KeyBundle of {partner_id} to {self.user_id}")
         try:
-            key_bundle = self.KeyStorage.LoadUserKeyBundle(partner_id)
+            key_bundle = self.StorageManager.LoadKeyBundle(partner_id)
             if not key_bundle or not key_bundle.get("identity_key"):
                 payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
             else:
-                serializable_bundle = {
-                    "identity_key": b64_encode(key_bundle.get("identity_key")),
-                    "signed_pre_key": b64_encode(key_bundle.get("signed_pre_key")),
-                    "signing_key": b64_encode(key_bundle.get("signing_key")),
-                    "signature": b64_encode(key_bundle.get("signature")), # Correctly encode the signature
-                    "one_time_pre_key": b64_encode(key_bundle.get("one_time_pre_key")),
-                    "one_time_key_id": key_bundle.get("one_time_key_id"),
-                    "user_id": partner_id,
-                }
-                payload = self.caching.payload("key_bundle_ok", serializable_bundle)
+                # The bundle from StorageManager now contains the correct base64 strings
+                payload = self.caching.payload("key_bundle_ok", key_bundle)
 
-            asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(payload)), self.loop)
-            print(payload)
+            asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
 
         except Exception as e:
-            print(f"Error in caching.handle_key_bundle_request: {e}")
+            print(f"Error in handle_key_bundle_request: {e}")
             payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
-            asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(payload)), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
