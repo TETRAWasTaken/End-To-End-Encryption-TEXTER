@@ -23,10 +23,10 @@ class NetworkService(QObject):
     message_received = Signal(dict)
     error_occured = Signal(str)
 
-    def __init__(self, host_uri = "127.0.0.1"):
+    def __init__(self, host_uri = "textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"):
         super().__init__()
         self.websocket = None
-        self.host_uri = 'wss://' + host_uri + ':12345'
+        self.host_uri = 'wss://' + host_uri
         self._create_ssl_context()
 
         # --- Threading and asyncio setup ---
@@ -60,10 +60,7 @@ class NetworkService(QObject):
             return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def _create_ssl_context(self):
-        self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        self.ssl_context.verify_mode = ssl.CERT_REQUIRED
-        self.ssl_context.check_hostname = False
-        self.ssl_context.load_verify_locations(cafile='server.crt')
+        self.ssl_context = ssl.create_default_context()
 
     @staticmethod
     def payload(status: str, message: str | dict) -> json.dumps:
