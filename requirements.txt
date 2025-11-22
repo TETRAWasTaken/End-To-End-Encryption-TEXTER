@@ -10,3 +10,4 @@ PySide6_Essentials==6.10.0
 qasync==0.28.0
 uvicorn==0.38.0
 websockets==15.0.1
+certifi==2025.11.12
