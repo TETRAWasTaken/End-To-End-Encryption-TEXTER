@@ -20,8 +20,6 @@ The server can handle an unlimited number of clients, but it will require increa
 
 **End-to-End Encryption:**
 The system will automatically initiate end-to-end encryption, eliminating the need for user intervention.
-The system will be using X3DH Asynchronous Approach so as to make the E2EE handshake possible even when the receiver user is offline, that is Asynchronous Approach
-The X3DH protocol aka Signal Protocol will be based dorectly on 
 
 **Testing:**
 Please contact me if any bugs arise. I have only tested this application on an Apple Silicon MacBook (ARM-based).
