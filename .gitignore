@@ -5,3 +5,7 @@
 .venv
 .server.crt
 .server.key
+database.ini
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/vcs.xml
