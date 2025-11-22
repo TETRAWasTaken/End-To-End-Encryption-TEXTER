@@ -4,7 +4,7 @@ A secure, end-to-end encrypted messaging application built with Python, featurin
 
 ---
 
-## ⚠️ IMPORTANT LEGAL DISCLAIMER AND WARNINGS ⚠️
+##  IMPORTANT LEGAL DISCLAIMER AND WARNINGS 
 
 **READ THIS CAREFULLY BEFORE USING THIS SOFTWARE**
 
