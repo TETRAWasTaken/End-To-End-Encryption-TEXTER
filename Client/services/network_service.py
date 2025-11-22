@@ -76,24 +76,40 @@ class NetworkService(QObject):
             print("NetworkService: Event loop is not running. Cannot schedule task.")
 
     def _create_ssl_context(self):
-        self.ssl_context = ssl.create_default_context(cafile=certifi.where())
+        import os
+        self.ssl_context = None
+        try:
+            cafile = certifi.where()
+            if os.path.exists(cafile):
+                # CRITICAL FIX: Tell OpenSSL where the certs are globally
+                os.environ['SSL_CERT_FILE'] = cafile
+                os.environ['REQUESTS_CA_BUNDLE'] = cafile
+
+                self.ssl_context = ssl.create_default_context(cafile=cafile)
+                print(f"NetworkService: SSL Context created. Certs at: {cafile}", flush=True)
+            else:
+                print(f"NetworkService: Certifi file missing at {cafile}. using system default.", flush=True)
+                self.ssl_context = ssl.create_default_context()
+        except Exception as e:
+            print(f"NetworkService: Error in SSL setup: {e}. Fallback to system.", flush=True)
+            self.ssl_context = ssl.create_default_context()
 
     @staticmethod
-    def payload(status: str, message: str | dict) -> json.dumps:
+    def payload(status: str, message: str | dict) -> str:
         """
         Describes the general payload of each message sent
         :param status: The basic code of a sent message, can be "error", "ok"
         :param message: The extra details that needs to be sent
-        :return payload: A JSON object containing the status and message
+        :return payload: A JSON string containing the status and message
         """
 
         payload = {
             "status": status,
             "message": message
         }
-        return json.dumps(payload)
+        return json.dumps(payload, ensure_ascii=False)
 
-    def message_payload(self, sender_user_id: str, receiver_user_id: str, text) -> json.dumps:
+    def message_payload(self, sender_user_id: str, receiver_user_id: str, text: str) -> str:
         """
         A sub-json payload definition to send an encrypted text
         """
@@ -110,9 +126,11 @@ class NetworkService(QObject):
         Connects to the server
         """
         try:
+            print("Attempting Connection to Server")
             self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context, open_timeout=10)
             self.connected.emit()
             self.schedule_task(self.listen())
+            print("Connection Successful")
         except (websockets.exceptions.WebSocketException, OSError, asyncio.TimeoutError) as e:
             error_msg = f"Connection failed: {e.__class__.__name__} - {e}"
             self.error_occured.emit(error_msg)
