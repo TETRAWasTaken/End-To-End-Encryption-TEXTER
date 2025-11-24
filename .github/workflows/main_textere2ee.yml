@@ -3,7 +3,7 @@ name: Build and deploy Python app to Azure Web App - TEXTERE2EE
 on:
   push:
     branches:
-      - Azure-Deployment
+      - main
       - Client
   workflow_dispatch:
 
