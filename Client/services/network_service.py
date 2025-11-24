@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import ssl
 import certifi
@@ -76,22 +77,31 @@ class NetworkService(QObject):
             print("NetworkService: Event loop is not running. Cannot schedule task.")
 
     def _create_ssl_context(self):
+        """
+        Creates the SSL context, prioritizing certifi but falling back to system defaults
+        to ensure the app works even if packaging breaks the cert file path.
+        """
+        import certifi
+        import ssl
         import os
+
         self.ssl_context = None
+
         try:
+            # Attempt 1: Use certifi
             cafile = certifi.where()
             if os.path.exists(cafile):
-                # CRITICAL FIX: Tell OpenSSL where the certs are globally
+                # This fixes the "hang" by telling OpenSSL where the file is
                 os.environ['SSL_CERT_FILE'] = cafile
                 os.environ['REQUESTS_CA_BUNDLE'] = cafile
-
                 self.ssl_context = ssl.create_default_context(cafile=cafile)
-                print(f"NetworkService: SSL Context created. Certs at: {cafile}", flush=True)
             else:
-                print(f"NetworkService: Certifi file missing at {cafile}. using system default.", flush=True)
+                print(f"Certifi file not found at {cafile}. Switching to system default.")
                 self.ssl_context = ssl.create_default_context()
+
         except Exception as e:
-            print(f"NetworkService: Error in SSL setup: {e}. Fallback to system.", flush=True)
+            print(f"Error loading certifi ({e}). Switching to system default.")
+            # Attempt 2: Fallback to System Default (System Trust Store)
             self.ssl_context = ssl.create_default_context()
 
     @staticmethod
@@ -126,11 +136,10 @@ class NetworkService(QObject):
         Connects to the server
         """
         try:
-            print("Attempting Connection to Server")
+            # clean connection logic without probes
             self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context, open_timeout=10)
             self.connected.emit()
             self.schedule_task(self.listen())
-            print("Connection Successful")
         except (websockets.exceptions.WebSocketException, OSError, asyncio.TimeoutError) as e:
             error_msg = f"Connection failed: {e.__class__.__name__} - {e}"
             self.error_occured.emit(error_msg)
