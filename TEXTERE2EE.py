@@ -11,8 +11,11 @@ if __name__ == "__main__":
         # 1. Create the Qt Application
         app = QApplication(sys.argv)
 
+        app.setApplicationName("TEXTERE2EE")
+        app.setOrganizationName("Anshumaan Soni")
+
         # 2. Prevent app from quitting when we close the login window
-        app.setQuitOnLastWindowClosed(False)
+        app.setQuitOnLastWindowClosed(True)
 
         # 3. Create the qasync Event Loop
         loop = qasync.QEventLoop(app)
@@ -23,6 +26,8 @@ if __name__ == "__main__":
         # 5. Create the main controller (it's now saved in the global 'controller' variable)
         controller = AppController()
         controller.setParent(app)
+
+        app.aboutToQuit.connect(controller.shutdown)
 
         # 6. Start the controller's logic
         controller.run()

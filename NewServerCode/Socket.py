@@ -123,7 +123,10 @@ class Server:
                     command_payload = {'method': 'handle_key_bundle_request', 'args': payload}
                     self.command_queue.put(command_payload)
 
-        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
+        except (websockets.exceptions.ConnectionClosed,
+                websockets.exceptions.ConnectionClosedError,
+                websockets.exceptions.ConnectionClosedOK,
+                ConnectionError):
             print(f"Client {self.user_id} disconnected.")
         except Exception as e:
             print(f"Unexpected error in listen thread for {self.user_id}: {e}")

@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from typing import Dict
+from PySide6.QtCore import QStandardPaths
 
 
 class CryptServices:
@@ -26,10 +27,15 @@ class CryptServices:
         self.utils = utils.EncryptionUtil()
         self.counters = utils.CryptoCounters()
 
+        # Get Correct Data directory
+        data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+
         # Paths to our two protected files
-        self._key_file = f"{self.username}_keystore.json"
-        self._state_file = f"{self.username}_statestore.json"
-        self._contacts_file = f"{self.username}_contacts.json"
+        self._key_file = os.path.join(data_dir, f"{self.username}_keystore.json")
+        self._state_file = os.path.join(data_dir, f"{self.username}_statestore.json")
+        self._contacts_file = os.path.join(data_dir, f"{self.username}_contacts.json")
 
         # --- In-Memory State ---
         # The key derived from the user's password, stored only for this session
@@ -55,11 +61,13 @@ class CryptServices:
 
     def _X3DH_KDF(self, km: bytes) -> bytes:
         F = b'\xFF' * 32
-        ikm = F + km
+        # Per X3DH spec, salt is zeros, IKM is F || KM
+        salt = b'\x00' * 32
+        ikm = F + km 
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=b'\x00' * 32,  # Zero-filled salt
+            salt=salt,
             info=b"X3DH",  # Application-specific info
             backend=default_backend()
         )

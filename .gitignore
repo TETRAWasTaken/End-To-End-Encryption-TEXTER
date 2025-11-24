@@ -9,3 +9,6 @@ database.ini
 .idea/inspectionProfiles/profiles_settings.xml
 .idea/misc.xml
 .idea/vcs.xml
+/TEXTERE2EE.app/
+/TEXTERE2EE.build/
+/TEXTERE2EE.dist/

@@ -245,19 +245,20 @@ class AppController(QObject):
         Called when user selects a partner in the chat window.
         Checks for an existing session before requesting a new bundle.
         """
-        # Check if a session already exists for this partner
-        if self.crypt_services and partner in self.crypt_services.sessions:
-            if self.chat_view:
-                self.chat_view.set_status(f"Ready to chat with {partner}", "green")
-                self.chat_view.set_input_enabled(True)
-            return
-
-        # If no session exists, proceed with requesting user availability and bundle
+        # Always check user availability and fetch the latest bundle.
+        # This ensures we have the bundle in memory even if a session was loaded from disk,
+        # and also confirms if the user is online.
+        # The server will provide a one-time-pre-key if needed for a new session,
+        # or we can just use the bundle to re-validate an existing one.
         payload = {
             "status": "User_Select",
             "user_id": partner
         }
         self.network.send_payload(json.dumps(payload))
+        if self.chat_view:
+            # Give immediate feedback while we wait for the network response
+            self.chat_view.set_status(f"Checking availability of {partner}...", "blue")
+            self.chat_view.set_input_enabled(False)
 
     def request_bundle_for_partner(self, partner_name: str):
         """Requests a key bundle for a specific partner."""
@@ -302,3 +303,12 @@ class AppController(QObject):
             for contact in contacts:
                 self.chat_view.contact_list.addItem(contact)
             print(f"Loaded {len(contacts)} contacts.")
+
+    @Slot()
+    def shutdown(self):
+        """
+        Gracefully shuts down the network service when the app is closing.
+        """
+        print("AppController: Initiating shutdown...")
+        if self.network:
+            self.network.shutdown()

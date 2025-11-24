@@ -267,7 +267,7 @@ class caching:
             with conn.cursor() as cur:
                 for a_sender_id in senders_to_check:
                     cur.execute(
-                        "SELECT text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = FALSE ORDER BY time_stamp_creation ASC",
+                        "SELECT id, text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = FALSE ORDER BY time_stamp_creation ASC",
                         (receiver_id, a_sender_id)
                     )
                     results = cur.fetchall()
@@ -276,12 +276,12 @@ class caching:
                         continue
                     
                     with conn.cursor() as update_cur:
-                        for text_cache, time_stamp in results:
+                        for id, text_cache, time_stamp in results:
                             text_dict = json.loads(text_cache)
                             if self.send_text(a_sender_id, receiver_id, text_dict, True):
                                 update_cur.execute(
-                                    "UPDATE text_cache SET flag = TRUE, time_stamp_last_usage = %s WHERE receiver_id = %s AND sender_id = %s AND time_stamp_creation = %s",
-                                    (datetime.datetime.now(), receiver_id, a_sender_id, time_stamp)
+                                    "UPDATE text_cache SET flag = TRUE, time_stamp_last_usage = %s WHERE id=%s",
+                                    (datetime.datetime.now(), id)
                                 )
                             else:
                                 print(f"Error while sending cached text from {a_sender_id} to {receiver_id}.")

@@ -80,7 +80,7 @@ class Server:
             socket_handler.associated_thread.start()
 
             # Now, with the thread running, trigger retrieval of cached messages.
-            self.caching.retrieve_cached_messages(receiver_id=user_id)
+            await asyncio.to_thread(self.caching.retrieve_cached_messages, receiver_id=user_id)
             
             # Wait for the thread to signal that it's finished.
             await socket_handler.finished.wait()
