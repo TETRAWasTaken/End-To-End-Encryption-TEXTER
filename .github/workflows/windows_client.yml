@@ -1,11 +1,11 @@
 name: Build Windows Client
 
 on:
-  workflow_dispatch:  # Allows you to manually trigger the build from GitHub.com
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest  # This gives you a real Windows machine in the cloud
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -19,17 +19,15 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install -r requirements.txt
-          pip install nuitka certifi idna
-          # Ensure websockets is installed (sometimes Nuitka needs explicit install)
-          pip install websockets
+          pip install nuitka certifi idna websockets
 
-      - name: Build with Nuitka
-        # This runs the standard Windows build command
+      - name: Build Single EXE with Nuitka
         run: |
-          python -m nuitka --standalone --windows-disable-console --enable-plugin=pyside6 --include-package-data=certifi --include-module=ssl --include-module=socket --include-module=idna --include-package=websockets --output-dir=build TEXTERE2EE.py --assume-yes-for-downloads
+          # The flag --onefile is the key here
+          python -m nuitka --onefile --windows-disable-console --assume-yes-for-downloads --enable-plugin=pyside6 --include-package-data=certifi --include-module=ssl --include-module=socket --include-module=idna --include-package=websockets --output-dir=build TEXTERE2EE.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TEXTERE2EE_Windows_App
-          path: build/TEXTERE2EE.dist
+          name: TEXTERE2EE_Single_File
+          path: build/TEXTERE2EE.exe  # Note: It looks for .exe now, not .dist folder
