@@ -26,7 +26,7 @@ jobs:
       - name: Build with Nuitka
         # This runs the standard Windows build command
         run: |
-          python -m nuitka --standalone --windows-disable-console --enable-plugin=pyside6 --include-package-data=certifi --include-module=ssl --include-module=socket --include-module=idna --include-package=websockets --output-dir=build TEXTERE2EE.py
+          python -m nuitka --standalone --windows-disable-console --enable-plugin=pyside6 --include-package-data=certifi --include-module=ssl --include-module=socket --include-module=idna --include-package=websockets --output-dir=build TEXTERE2EE.py --assume-yes-for-downloads
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
