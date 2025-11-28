@@ -44,6 +44,8 @@ jobs:
           websockets==15.0.1
           psycopg2-binary==2.9.10
           cryptography==46.0.3
+          argon2-cffi==25.1.0
+          argon2-cffi-bindings==25.1.0
           EOF
           
           echo "--- Final Deployment Package ---"
