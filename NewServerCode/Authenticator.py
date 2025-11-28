@@ -6,6 +6,8 @@ import websockets
 import json
 import asyncio
 from NewServerCode import caching
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 from database import StorageManager
 
 class AuthenticatorAndKeyHandler:
@@ -18,6 +20,7 @@ class AuthenticatorAndKeyHandler:
         """
         self.caching = caching
         self.StorageManager = storage_manager
+        self.ph = PasswordHasher()
 
     async def handle_authentication(self, websocket) -> str | None:
         """
@@ -40,12 +43,23 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
                     
-                    if self.caching.check_credentials(user, passw):
+                    # 1. Fetch the stored hash from the database
+                    stored_hash = self.StorageManager.GetUserPasswordHash(user) # You will need to implement this method
+
+                    if not stored_hash:
+                        await websocket.send(self.caching.payload("error", "Credfail")) # User not found
+                        continue
+
+                    # 2. Verify the password against the hash
+                    try:
+                        self.ph.verify(stored_hash, passw)
+                        # If verify() succeeds, the password is correct.
                         await websocket.send(self.caching.payload("ok", "success"))
                         authenticated_and_handled = True
                         self.caching.add_active_user(websocket, user, None)
-                        return user # Return user_id on success
-                    else:
+                        return user  # Return user_id on success
+                    except VerifyMismatchError:
+                        # This is the expected error for a wrong password.
                         await websocket.send(self.caching.payload("error", "Credfail"))
                         continue
 
@@ -58,11 +72,15 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
 
-                    if self.caching.check_credentials(user):
+                    # Check if user already exists
+                    if self.StorageManager.UserExists(user): # You will need to implement this method
                         await websocket.send(self.caching.payload("error", "AAE"))
                         continue
                     else:
-                        if self.caching.insert_credentials(user, passw):
+                        # 1. Hash the new password
+                        hashed_password = self.ph.hash(passw)
+                        # 2. Store the user and the HASHED password
+                        if self.StorageManager.InsertUser(user, hashed_password): # You will need to implement this method
                             await websocket.send(self.caching.payload("ok", "Registration Successful"))
 
                             response_payload = await websocket.recv()

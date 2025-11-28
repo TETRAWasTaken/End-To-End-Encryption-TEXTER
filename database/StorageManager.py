@@ -19,7 +19,7 @@ class StorageManager:
         except Exception as e:
             print(f"Error : {e} while initialising KeyStorage")
 
-    def check_user(self, user_id : str) -> bool:
+    def UserExists(self, user_id : str) -> bool:
         """
         Query the database to check if the user exists
         :param user_id:
@@ -46,6 +46,67 @@ class StorageManager:
             finally:
                 if conn is not None:
                     self.DB.pool.putconn(conn)
+
+    def GetUserPasswordHash(self, user_id: str) -> str | None:
+        """
+        Retrieves the password hash for a given user.
+        :param user_id: The user's username.
+        :return: The password hash string, or None if the user doesn't exist.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT password_hash FROM User_Info WHERE user_id = %s",
+                (user_id,),
+            )
+            result = cur.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"Error : {e} while getting user password hash")
+            return None
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
+
+    def InsertUser(self, user_id: str, password_hash: str) -> bool:
+        """
+        Inserts a new user with their username and hashed password.
+        :param user_id: The new user's username.
+        :param password_hash: The Argon2 hashed password.
+        :return: True if insertion is successful, False otherwise.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+            # Assuming your user table is named User_Info and has these columns
+            cur.execute(
+                "INSERT INTO User_Info (user_id, password_hash) VALUES (%s, %s)",
+                (user_id, password_hash),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            if conn is not None:
+                conn.rollback()
+            print(f"Error : {e} while inserting new user")
+            return False
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
+
 
     def SaveKeyBundle(self, KeyBundle: dict, user_id : str) -> bool:
         """

@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS User_Info;
 -- Table to store each registered user's username and a secure password hash.
 CREATE TABLE User_Info (
     user_id VARCHAR(100) PRIMARY KEY,
-    password VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
     time_stamp_creation TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
