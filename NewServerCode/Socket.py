@@ -295,33 +295,38 @@ class Server:
 
     def handle_accept_friend_request(self, payload: dict):
         """
-        Handles accepting a friend request.
+        Handles accepting a friend request and notifies both users.
         """
-        from_user = payload.get("from_user")
-        to_user = payload.get("to_user")
+        from_user = payload.get("from_user") # The original sender of the request
+        to_user = payload.get("to_user")     # The user who is accepting the request (self.user_id)
 
-        if not from_user or not to_user:
+        if not from_user or not to_user or to_user != self.user_id:
             return
 
         try:
             success = self.StorageManager.AcceptFriendRequest(from_user, to_user)
 
             if success:
-                # Notify the user that the request was accepted
-                response = self.caching.payload("friend_request_accepted_status", "success")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+                # --- Notify both users that they are now friends ---
 
-                # If the original sender is online, notify them that their request was accepted
+                # 1. Notify the accepting user (current client)
+                response_to_acceptor = self.caching.payload("friend_request_accepted", {"friend_username": from_user})
+                asyncio.run_coroutine_threadsafe(self.websocket.send(response_to_acceptor), self.loop)
+
+                # 2. Notify the original sender
                 target_websocket = self.caching.get_active_user_websocket(from_user)
                 if target_websocket:
                     target_user_info = self.caching.get_active_user_info(target_websocket)
                     if target_user_info and target_user_info[1]:
                         target_socket_handler = target_user_info[1]
-                        notification = self.caching.payload("friend_request_accepted_notification", {"by": to_user})
-                        notification_dict = json.loads(notification)
+                        
+                        notification_to_sender = self.caching.payload("friend_request_accepted", {"friend_username": to_user})
+                        notification_dict = json.loads(notification_to_sender)
+                        
                         command_payload = {'method': 'send_text', 'args': notification_dict}
                         target_socket_handler.command_queue.put(command_payload)
             else:
+                # Notify the accepting user of failure
                 response = self.caching.payload("friend_request_accepted_status", "failed")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
 

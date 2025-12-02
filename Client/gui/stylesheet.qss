@@ -3,8 +3,8 @@
  */
 
 QMainWindow {
-    background-color: #2E3440; /* Nord Polar Night */
-    color: #D8DEE9; /* Nord Snow Storm */
+    background-color: #0f0e47;
+    color: #8686ac;
 }
 
 QWidget {
@@ -14,14 +14,14 @@ QWidget {
 
 /* --- Tabs --- */
 QTabWidget::pane {
-    border-top: 2px solid #4C566A; /* Nord Polar Night */
+    border-top: 2px solid #272757;
 }
 
 QTabBar::tab {
-    background: #3B4252; /* Nord Polar Night */
-    color: #ECEFF4; /* Nord Snow Storm */
-    border: 1px solid #4C566A;
-    border-bottom-color: #4C566A; 
+    background: #272757;
+    color: #8686ac;
+    border: 1px solid #505081;
+    border-bottom-color: #505081; 
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
     min-width: 8ex;
@@ -29,54 +29,54 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected, QTabBar::tab:hover {
-    background: #434C5E; /* Nord Polar Night */
+    background: #505081;
 }
 
 QTabBar::tab:selected {
-    border-color: #5E81AC; /* Nord Frost */
-    border-bottom-color: #434C5E;
+    border-color: #8686ac;
+    border-bottom-color: #505081;
 }
 
 /* --- Buttons --- */
 QPushButton {
-    background-color: #5E81AC; /* Nord Frost */
-    color: #ECEFF4;
+    background-color: #505081;
+    color: #0f0e47;
     border: none;
     padding: 8px 16px;
     border-radius: 4px;
 }
 
 QPushButton:hover {
-    background-color: #81A1C1; /* Nord Frost */
+    background-color: #8686ac;
 }
 
 QPushButton:pressed {
-    background-color: #88C0D0; /* Nord Frost */
+    background-color: #8686ac;
 }
 
 QPushButton:disabled {
-    background-color: #4C566A;
-    color: #D8DEE9;
+    background-color: #272757;
+    color: #505081;
 }
 
 /* --- Text Inputs --- */
 QLineEdit, QTextEdit {
-    background-color: #3B4252;
-    color: #ECEFF4;
-    border: 1px solid #4C566A;
+    background-color: #272757;
+    color: #8686ac;
+    border: 1px solid #505081;
     border-radius: 4px;
     padding: 6px;
 }
 
 QLineEdit:focus, QTextEdit:focus {
-    border: 1px solid #5E81AC;
+    border: 1px solid #8686ac;
 }
 
 /* --- List Widgets (Contacts) --- */
 QListWidget {
-    background-color: #3B4252;
-    color: #D8DEE9;
-    border: 1px solid #4C566A;
+    background-color: #272757;
+    color: #8686ac;
+    border: 1px solid #505081;
     border-radius: 4px;
 }
 
@@ -85,15 +85,15 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #5E81AC;
-    color: #ECEFF4;
+    background-color: #505081;
+    color: #0f0e47;
 }
 
 /* --- Labels --- */
 QLabel {
-    color: #D8DEE9;
+    color: #8686ac;
 }
 
 #statusLabel { /* You can set this objectName in your code */
-    color: #A3BE8C; /* Nord Frost - Green */
+    color: #8686ac; 
 }
