@@ -8,7 +8,7 @@ import threading # Import threading
 from database import DB_connect
 
 
-class Caching:
+class caching:
     def __init__(self, db: DB_connect.DB_connect):
         self.db = db
         self.ACTIVEUSERS = {} # { websocket : [ user_id , socket_handler ]}
