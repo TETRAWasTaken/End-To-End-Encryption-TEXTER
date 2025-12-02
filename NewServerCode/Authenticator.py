@@ -28,8 +28,10 @@ class AuthenticatorAndKeyHandler:
         Returns the user_id on successful authentication, otherwise None.
         """
         authenticated_and_handled = False
+        tries=0
         try:
-            while not authenticated_and_handled:
+            while not authenticated_and_handled and tries<5:
+                tries += 1
                 payload_str = await websocket.recv()
                 payload = json.loads(payload_str)
                 command = payload.get("command")
@@ -97,10 +99,11 @@ class AuthenticatorAndKeyHandler:
                             await websocket.send(self.caching.payload("error", "Registration failed on server."))
                         continue
 
-
                 else:
                     await websocket.send(self.caching.payload("error", "Unknown command"))
                     continue
+
+            return None
 
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
             print(f"Connection from {websocket.remote_address} closed during authentication.")
@@ -109,6 +112,6 @@ class AuthenticatorAndKeyHandler:
         except Exception as e:
             print(f"Error in connection_handler for {websocket.remote_address}: {e}")
         finally:
-            if not authenticated_and_handled:
+            if not authenticated_and_handled or tries>=5:
                 # This block now only runs on exceptions or graceful client disconnect
                 return None

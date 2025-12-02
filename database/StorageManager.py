@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from database import DB_connect as DB
 import datetime
-from typing import Dict
+from typing import Dict, List
 
 """
 This class is meant for retrieval and manipulation of file storage
@@ -266,3 +268,110 @@ class StorageManager:
             self.DB.pool.putconn(conn)
         except Exception as e:
             print(f"Error : {e} while deleting KeyBundle")
+
+    def CheckFriendsStatus(self, user_one_id : str, user_two_id : str) -> bool:
+        """
+        Check if two users are friends or not
+        :param user_one_id:
+        :param user_two_id:
+        :return bool:
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT EXISTS (SELECT 1 FROM friends WHERE (user_one_id = %s AND user_two_id = %s) OR (user_one_id = %s AND user_two_id = %s) AND status = %s)"
+                , (user_one_id, user_two_id, user_two_id, user_one_id, "accepted"))
+            exists = cur.fetchone()[0]
+            return bool(exists)
+
+        except Exception as e:
+            print(f"Error : {e} while checking friends status")
+            return False
+        finally:
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                if conn is not None:
+                    self.DB.pool.putconn(conn)
+
+    def CreateFriendRequest(self, from_user_id: str, to_user_id: str) -> bool:
+        """
+        Creates a friend request from one user to another.
+        :param from_user_id: The user sending the request.
+        :param to_user_id: The user receiving the request.
+        :return: True if the request was created successfully, False otherwise.
+        """
+        conn = None
+        cur = None
+        try:
+            # 1. Don't allow self-requests
+            if from_user_id == to_user_id:
+                return False
+
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+
+            # 2. Check if target user exists
+            cur.execute("SELECT EXISTS (SELECT 1 FROM User_Info WHERE user_id = %s)", (to_user_id,))
+            if not cur.fetchone()[0]:
+                return False # Target user doesn't exist
+
+            # 3. Check if they are already friends or a request is pending
+            cur.execute(
+                """
+                SELECT 1 FROM friends 
+                WHERE (user_one_id = %s AND user_two_id = %s) OR (user_one_id = %s AND user_two_id = %s)
+                """,
+                (from_user_id, to_user_id, to_user_id, from_user_id)
+            )
+            if cur.fetchone():
+                return False # A relationship (friend or pending) already exists
+
+            # 4. Insert the new friend request
+            cur.execute(
+                "INSERT INTO friends (user_one_id, user_two_id, status) VALUES (%s, %s, %s)",
+                (from_user_id, to_user_id, "pending"),
+            )
+            conn.commit()
+            return True
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error in CreateFriendRequest: {e}")
+            return False
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
+
+    def GetPendingFriendRequests(self, user_id: str) -> List[str]:
+        """
+        Retrieves a list of users who have sent a friend request to the given user.
+        :param user_id: The user to check for pending requests.
+        :return: A list of user_ids who have sent a request.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_one_id FROM friends WHERE user_two_id = %s AND status = %s",
+                (user_id, "pending"),
+            )
+            requests = [row[0] for row in cur.fetchall()]
+            return requests
+        except Exception as e:
+            print(f"Error in GetPendingFriendRequests: {e}")
+            return []
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)

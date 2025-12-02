@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS onetime_pre_key;
 DROP TABLE IF EXISTS signed_key;
 DROP TABLE IF EXISTS identity_key;
 DROP TABLE IF EXISTS User_Info;
+DROP TABLE IF  EXISTS friend_requests;
 
 -- Table to store each registered user's username and a secure password hash.
 CREATE TABLE User_Info (
@@ -67,3 +68,17 @@ CREATE TABLE text_cache (
 
 -- Index to quickly retrieve cached messages for a receiver.
 CREATE INDEX idx_text_cache_receiver ON text_cache (receiver_id);
+
+-- A ENUM type to represent the status of a friend request.
+CREATE TYPE status_type AS ENUM ('pending', 'accepted', 'rejected', 'blocked');
+
+-- Table to keep track of friends and their statuses.
+CREATE TABLE friends (
+    friend_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_one_id VARCHAR(100) NOT NULL,
+    user_two_id VARCHAR(100) NOT NULL,
+    status status_type NOT NULL,
+
+    CONSTRAINT fk_user_one FOREIGN KEY(user_one_id) REFERENCES User_Info(user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_user_two FOREIGN KEY(user_two_id) REFERENCES User_Info(user_id) ON DELETE CASCADE
+);
