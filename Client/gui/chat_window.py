@@ -11,6 +11,7 @@ class ChatWindow(QMainWindow):
     send_message_requested = Signal(str, str)
     partner_selected = Signal(str)
     friend_request_sent = Signal(str)
+    friend_request_accepted = Signal(str)
 
     def __init__(self, username):
         super().__init__()
@@ -52,6 +53,7 @@ class ChatWindow(QMainWindow):
 
         self.send_btn = QPushButton("Send")
         self.status_label = QLabel()
+        self.status_label.setObjectName("statusLabel")
 
         self.partner_input = QLineEdit()
         self.partner_input.setPlaceholderText("Enter partner's username")
@@ -159,17 +161,30 @@ class ChatWindow(QMainWindow):
         self.send_btn.setEnabled(enabled)
 
     def add_friend_request_notification(self, from_user: str):
-        # This is a simple way to show notifications. For a real app, you might want a list.
-        notification_label = QLabel(f"New friend request from: {from_user}")
-        self.friend_request_tab.layout().insertWidget(self.friend_request_tab.layout().count() - 1, notification_label)
+        notification_widget = QWidget()
+        layout = QHBoxLayout(notification_widget)
+        
+        label = QLabel(f"New friend request from: {from_user}")
+        accept_btn = QPushButton("Accept")
+        
+        layout.addWidget(label)
+        layout.addWidget(accept_btn)
+        
+        accept_btn.clicked.connect(lambda: self.on_accept_friend_request(from_user, notification_widget))
+        
+        self.friend_request_tab.layout().insertWidget(self.friend_request_tab.layout().count() - 1, notification_widget)
+
+    def on_accept_friend_request(self, from_user: str, widget: QWidget):
+        self.friend_request_accepted.emit(from_user)
+        widget.deleteLater()
 
     def show_friend_request_status(self, status: str):
         if status == "sent":
             self.friend_request_status_label.setText("Friend request sent successfully.")
-            self.friend_request_status_label.setStyleSheet("color: green")
+            self.friend_request_status_label.setStyleSheet("color: #A3BE8C;") # Nord Frost - Green
         elif status == "failed":
             self.friend_request_status_label.setText("Failed to send friend request. User may not exist or a request is already pending.")
-            self.friend_request_status_label.setStyleSheet("color: red")
+            self.friend_request_status_label.setStyleSheet("color: #BF616A;") # Nord Frost - Red
         else:
             self.friend_request_status_label.setText(f"Friend request status: {status}")
-            self.friend_request_status_label.setStyleSheet("color: black")
+            self.friend_request_status_label.setStyleSheet("color: #D8DEE9;") # Nord Snow Storm

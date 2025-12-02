@@ -375,3 +375,32 @@ class StorageManager:
                 cur.close()
             if conn:
                 self.DB.pool.putconn(conn)
+
+    def AcceptFriendRequest(self, from_user_id: str, to_user_id: str) -> bool:
+        """
+        Accepts a friend request.
+        :param from_user_id: The user who sent the request.
+        :param to_user_id: The user who is accepting the request.
+        :return: True if the request was accepted successfully, False otherwise.
+        """
+        conn = None
+        cur = None
+        try:
+            conn = self.DB.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE friends SET status = %s WHERE user_one_id = %s AND user_two_id = %s AND status = %s",
+                ("accepted", from_user_id, to_user_id, "pending"),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error in AcceptFriendRequest: {e}")
+            return False
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
