@@ -53,12 +53,15 @@ class Server:
             try:
                 command_payload = self.command_queue.get(timeout=1)
                 method_name = command_payload.get("method")
-                args = command_payload.get("args", ())
+                args = command_payload.get("args")
 
                 if method_name:
                     target_method: Optional[Callable] = getattr(self, method_name, None)
                     if target_method and callable(target_method):
-                        target_method(args)
+                        if args is not None:
+                            target_method(args)
+                        else:
+                            target_method()
                     else:
                         continue
                 self.command_queue.task_done()
@@ -111,7 +114,15 @@ class Server:
                 payload = future.result()
                 payload = json.loads(payload)
 
-                if payload.get("status") == "Encrypted":
+                if payload.get("command") == "friend_request":
+                    command_payload = {'method': 'handle_friend_request', 'args': payload}
+                    self.command_queue.put(command_payload)
+                
+                elif payload.get("command") == "get_pending_friend_requests":
+                    command_payload = {'method': 'handle_get_pending_friend_requests', 'args': payload}
+                    self.command_queue.put(command_payload)
+
+                elif payload.get("status") == "Encrypted":
                     command_payload = {'method': 'recv_text', 'args': payload}
                     self.command_queue.put(command_payload)
 
@@ -166,47 +177,114 @@ class Server:
 
     def select_user(self, user_payload: dict):
         """
-        Processes the selected user from the client, and redirects to the correct user
-        :param user_payload:
+        Processes the selected user from the client, checks friendship status,
+        and triggers retrieval of cached messages.
         """
-        user_id = user_payload.get("user_id")
+        partner_id = user_payload.get("user_id")
         try:
             # First, check if the user even exists in the database
-            if not self.caching.check_credentials(user_id):
-                payload = self.caching.payload("User_Select", 'User Not Available') # Using client's expected message
+            if not self.caching.check_credentials(partner_id):
+                payload = self.caching.payload("User_Select", 'User Not Available')
                 asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
                 return
 
-            # Now check if the existing user is online
-            if self.caching.get_active_user_websocket(user_id): # Use thread-safe method
-                payload = self.caching.payload("User_Select", 'User Available') # Using client's expected message
-                self.receiver = user_id
+            # Now check if the existing user is a friend
+            if self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
+                if self.caching.get_active_user_websocket(partner_id):
+                    payload = self.caching.payload("User_Select", 'User Available And Friends')
+                    self.receiver = partner_id
+                else:
+                    payload = self.caching.payload("User_Select", 'User Not Online but Friends')
+                
+                asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                
+                # After notifying the client, retrieve cached messages for this specific chat
+                print(f"User {self.user_id} selected {partner_id}. Retrieving cached messages.")
+                self.caching.retrieve_cached_messages(self.user_id, partner_id)
             else:
-                payload = self.caching.payload('User_Select', 'User Not Online') # Using client's expected message
-            asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                payload = self.caching.payload('User_Select', 'User Not Friend')
+                asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+            
+            return
 
         except Exception as e:
             print(f"Error in select_user: {e}")
 
     def handle_key_bundle_request(self, payload: dict):
         """
-        Fetches and send the key bundle to the client
+        Fetches and sends the key bundle to the client, but only if the users are friends.
         """
         partner_id = payload.get("user_id")
-        if not partner_id:
+        if not partner_id or not self.user_id:
             return
 
         try:
+            # Security Check: Ensure the two users are friends before proceeding
+            if not self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
+                fail_payload = self.caching.payload("key_bundle_fail", "not_friends")
+                asyncio.run_coroutine_threadsafe(self.websocket.send(fail_payload), self.loop)
+                return
+
             key_bundle = self.StorageManager.LoadKeyBundle(partner_id)
             if not key_bundle or not key_bundle.get("identity_key"):
-                payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
+                fail_payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
+                asyncio.run_coroutine_threadsafe(self.websocket.send(fail_payload), self.loop)
             else:
-                # The bundle from StorageManager now contains the correct base64 strings
-                payload = self.caching.payload("key_bundle_ok", key_bundle)
-
-            asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                success_payload = self.caching.payload("key_bundle_ok", key_bundle)
+                asyncio.run_coroutine_threadsafe(self.websocket.send(success_payload), self.loop)
 
         except Exception as e:
             print(f"Error in handle_key_bundle_request: {e}")
-            payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
-            asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+            error_payload = self.caching.payload("key_bundle_fail", "server_error")
+            asyncio.run_coroutine_threadsafe(self.websocket.send(error_payload), self.loop)
+
+
+    def handle_friend_request(self, payload: dict):
+        """
+        Handles a friend request from a user.
+        """
+        from_user = payload.get("from_user")
+        to_user = payload.get("to_user")
+
+        if not from_user or not to_user:
+            return
+
+        try:
+            success = self.StorageManager.CreateFriendRequest(from_user, to_user)
+
+            if success:
+                response = self.caching.payload("friend_request_status", "sent")
+                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+
+                # If the target user is online, notify them of the new request
+                target_websocket = self.caching.get_active_user_websocket(to_user)
+                if target_websocket:
+                    target_user_info = self.caching.get_active_user_info(target_websocket)
+                    if target_user_info and target_user_info[1]: # target_user_info[1] is the socket_handler
+                        target_socket_handler = target_user_info[1]
+                        notification = self.caching.payload("new_friend_request", {"from": from_user})
+                        notification_dict = json.loads(notification)
+                        command_payload = {'method': 'send_text', 'args': notification_dict}
+                        target_socket_handler.command_queue.put(command_payload)
+            else:
+                response = self.caching.payload("friend_request_status", "failed")
+                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+
+        except Exception as e:
+            print(f"Error in handle_friend_request: {e}")
+            response = self.caching.payload("friend_request_status", "error")
+            asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+
+    def handle_get_pending_friend_requests(self, payload: dict = None):
+        """
+        Fetches and sends pending friend requests to the client.
+        """
+        if not self.user_id:
+            return
+
+        try:
+            pending_requests = self.StorageManager.GetPendingFriendRequests(self.user_id)
+            response = self.caching.payload("pending_friend_requests", pending_requests)
+            asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+        except Exception as e:
+            print(f"Error in handle_get_pending_friend_requests: {e}")

@@ -1,8 +1,4 @@
-import queue
-import threading
-from typing import Dict, List, Optional, Tuple, Union
-from cryptography.hazmat.primitives.asymmetric import x25519
-
+from typing import Dict
 from database import StorageManager
 
 """
@@ -18,7 +14,7 @@ class KeyStorage:
 
     def StoreUserKeyBundle(self, user_id: str,
                            identity_key: str,
-                           identity_key_dh: str, # Add this parameter
+                           identity_key_dh: str,
                            signed_pre_key: str,
                            signed_pre_key_signature: str,
                            one_time_pre_key: dict[str, str]) -> bool:
@@ -26,6 +22,7 @@ class KeyStorage:
         Calls the Storage manager to save the KeyBundle to the database.
         :param user_id:
         :param identity_key:
+        :param identity_key_dh:
         :param signed_pre_key:
         :param signed_pre_key_signature:
         :param one_time_pre_key:
@@ -35,7 +32,7 @@ class KeyStorage:
         KeyBundlePayload = {
             "user_id": user_id,
             "identity_key": identity_key,
-            "identity_key_dh": identity_key_dh, # Add to payload
+            "identity_key_dh": identity_key_dh,
             "signed_pre_key": signed_pre_key,
             "signature": signed_pre_key_signature,
             "one_time_pre_key": one_time_pre_key
@@ -60,17 +57,6 @@ class KeyStorage:
         except Exception as e:
             print(f"Error : {e} while loading KeyBundle")
             return {}
-
-    def _Check_User(self, user_id: str) -> bool:
-        """
-        Call the Storage manager to check if the user exists.
-        :return: Bool
-        """
-        try:
-            return self.StorageManager.check_user(user_id)
-        except Exception as e:
-            print(f"Error : {e} while checking User")
-            return False
 
     def DeleteUserKeyBundle(self, user_id: str) -> bool:
         """

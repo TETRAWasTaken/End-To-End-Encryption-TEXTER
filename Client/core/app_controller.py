@@ -53,6 +53,7 @@ class AppController(QObject):
         if self.chat_view:
             self.chat_view.send_message_requested.connect(self.handle_send_message)
             self.chat_view.partner_selected.connect(self.handle_partner_select)
+            self.chat_view.friend_request_sent.connect(self.handle_friend_request)
 
     # Slots
 
@@ -102,6 +103,20 @@ class AppController(QObject):
         elif status == "error":
             view.set_status(f"Error: {message}", "red")
 
+        elif status == "new_friend_request":
+            if self.chat_view:
+                from_user = message.get("from")
+                self.chat_view.add_friend_request_notification(from_user)
+
+        elif status == "friend_request_status":
+            if self.chat_view:
+                self.chat_view.show_friend_request_status(message)
+
+        elif status == "pending_friend_requests":
+            if self.chat_view:
+                for from_user in message:
+                    self.chat_view.add_friend_request_notification(from_user)
+
         elif status == "Encrypted":
             if self.chat_view:
                 sender = message.get("sender_user_id")
@@ -115,7 +130,10 @@ class AppController(QObject):
                         self.pending_messages[sender] = encrypted_payload
                         self.request_bundle_for_partner(sender)
                     elif decryption_result is not None:
-                        self.chat_view.add_message(sender, decryption_result)
+                        self.crypt_services.db.add_message(sender, sender, decryption_result)
+                        if self.chat_view.current_partner == sender:
+                            self.chat_view.add_message(sender, decryption_result)
+
 
             else:
                 print("Received chat message but no chat view is active.")
@@ -135,6 +153,12 @@ class AppController(QObject):
                 if self.chat_view:
                     self.chat_view.set_status("User not available", "red")
                     self.chat_view.set_input_enabled(False)
+            
+            elif message == "User Not Friend":
+                if self.chat_view:
+                    self.chat_view.set_status("You can only chat with friends.", "red")
+                    self.chat_view.set_input_enabled(False)
+
 
         elif status == "key_bundle_ok":
             partner_username = message.get("user_id")
@@ -151,8 +175,11 @@ class AppController(QObject):
                         self.network.loop.call_soon_threadsafe(self.process_pending_message, partner_username)
 
 
-            elif status == "key_bundle_fail":
-                if self.chat_view:
+        elif status == "key_bundle_fail":
+            if self.chat_view:
+                if message == "not_friends":
+                    self.chat_view.set_status("Cannot start a secure session. You are not friends with this user.", "red")
+                else:
                     self.chat_view.set_status("Selected partner cannot be contacted", "red")
                 self.chat_view.set_input_enabled(False)
 
@@ -184,6 +211,15 @@ class AppController(QObject):
         self.login_view.set_status("Generating Keys...", "blue")
         self.network.schedule_task(self.async_register(username, password))
 
+    @Slot(str)
+    def handle_friend_request(self, friend_username: str):
+        payload = {
+            "command": "friend_request",
+            "from_user": self.username,
+            "to_user": friend_username
+        }
+        self.network.send_payload(json.dumps(payload))
+
     async def async_register(self, username: str, password: str):
         self.username = username
         self.crypt_services = CryptServices(username)
@@ -192,6 +228,10 @@ class AppController(QObject):
             self.public_bundle = await asyncio.to_thread(
                 self.crypt_services.generate_and_save_key, password
             )
+            if self.public_bundle is None:
+                self.login_view.set_status("Username already exists on this device.", "red")
+                return
+
             self.login_view.set_status("Registering...", "blue")
             self.current_state = "register"
             register_payload = {
@@ -228,6 +268,8 @@ class AppController(QObject):
             return
 
         encrypted_payload = self.crypt_services.encrypt_message(partner, text)
+        
+        self.crypt_services.db.add_message(partner, self.username, text)
 
         server_payload = {
             "status": "Encrypted",
@@ -245,6 +287,10 @@ class AppController(QObject):
         Called when user selects a partner in the chat window.
         Checks for an existing session before requesting a new bundle.
         """
+        if self.chat_view:
+            history = self.crypt_services.db.get_messages(partner)
+            self.chat_view.load_chat_history(history)
+
         # Always check user availability and fetch the latest bundle.
         # This ensures we have the bundle in memory even if a session was loaded from disk,
         # and also confirms if the user is online.
@@ -260,11 +306,11 @@ class AppController(QObject):
             self.chat_view.set_status(f"Checking availability of {partner}...", "blue")
             self.chat_view.set_input_enabled(False)
 
-    def request_bundle_for_partner(self, partner_name: str):
+    def request_bundle_for_partner(self, partner_sname: str):
         """Requests a key bundle for a specific partner."""
         bundle_request_payload = {
             "status": "request_key_bundle",
-            "user_id": partner_name
+            "user_id": partner_sname
         }
         self.network.send_payload(json.dumps(bundle_request_payload))
 
@@ -274,7 +320,9 @@ class AppController(QObject):
         if encrypted_payload:
             decryption_result = self.crypt_services.decrypt_message(partner_name, encrypted_payload)
             if decryption_result not in ("NEEDS_BUNDLE", None):
-                self.chat_view.add_message(partner_name, decryption_result)
+                self.crypt_services.db.add_message(partner_name, partner_name, decryption_result)
+                if self.chat_view.current_partner == partner_name:
+                    self.chat_view.add_message(partner_name, decryption_result)
             else:
                 print(f"Error: Decryption failed for pending message from {partner_name}.")
 
@@ -282,7 +330,7 @@ class AppController(QObject):
     # Internal Logic
     def on_login_success(self):
         """
-        Swaps the login window with the chat window
+        Swaps the login window with the chat window and checks for pending friend requests.
         """
         # Save contacts before closing login view
         if self.crypt_services:
@@ -293,6 +341,19 @@ class AppController(QObject):
         self.load_contact_list() # Load contacts into the new chat view
         self.chat_view.show()
         self.login_view.close()
+
+        # Check for pending friend requests
+        self.check_pending_friend_requests()
+
+    def check_pending_friend_requests(self):
+        """
+        Sends a request to the server to get pending friend requests.
+        """
+        payload = {
+            "command": "get_pending_friend_requests"
+        }
+        self.network.send_payload(json.dumps(payload))
+
 
     def load_contact_list(self):
         """
