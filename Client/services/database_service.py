@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import pickle
 import json
 from typing import Dict, Optional, List
@@ -7,6 +6,7 @@ import datetime
 
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
+from pysqlcipher3 import dbapi2 as sqlite3
 
 from Client.services.double_ratchet import DoubleRatchetSession
 
@@ -24,18 +24,24 @@ class DatabaseService:
 
     def connect(self, file_key: bytes):
         """
-        Connects to the SQLite database.
-        NOTE: This is a placeholder for a real encrypted connection.
-        For a production app, you would use SQLCipher here.
-        Example with pysqlcipher3:
-        # self.conn = pysqlcipher3.connect(self._db_path)
-        # self.conn.execute(f"PRAGMA key = \"x'{file_key.hex()}'\"")
+        Connects to the SQLite database and encrypts it using SQLCipher.
         """
-        # For simplicity in this example, we are not using a live
-        # SQLCipher library, but the structure is here.
-        self.conn = sqlite3.connect(self._db_path)
-        self.conn.row_factory = sqlite3.Row
-        print(f"Database connected at {self._db_path}. (Note: Encryption via SQLCipher is recommended)")
+        try:
+            self.conn = sqlite3.connect(self._db_path)
+            self.conn.execute(f"PRAGMA key = \"x'{file_key.hex()}'\"")
+            self.conn.execute("PRAGMA cipher_page_size = 4096")
+            self.conn.execute("PRAGMA kdf_iter = 256000")
+            self.conn.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
+            self.conn.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
+            self.conn.row_factory = sqlite3.Row
+            # Test the connection
+            self.conn.execute("SELECT count(*) FROM sqlite_master;")
+            print(f"Encrypted database connected at {self._db_path}.")
+        except sqlite3.DatabaseError as e:
+            print(f"Failed to connect to encrypted database: {e}. This may be due to an incorrect password.")
+            self.conn = None
+            raise ConnectionError("Failed to connect to encrypted database") from e
+
 
     def close(self):
         """Closes the database connection."""

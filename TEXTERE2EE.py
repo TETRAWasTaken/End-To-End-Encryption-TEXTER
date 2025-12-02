@@ -23,6 +23,7 @@ if __name__ == "__main__":
             if os.path.exists(data_dir):
                 print(f"Dev Mode: Deleting old data directory: {data_dir}")
                 shutil.rmtree(data_dir, ignore_errors=True)
+            sys.exit(0)
         # --- End Clean ---
 
         # --- Apply Stylesheet ---

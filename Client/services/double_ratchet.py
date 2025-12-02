@@ -216,10 +216,6 @@ class DoubleRatchetSession:
 
     def RatchetDecrypt(self, header: dict, body: dict) -> bytes:
         """Decrypts a subsequent (not the first) message."""
-        plaintext = self._TrySkippedMessageKeys(header, body)
-        if plaintext is not None:
-            return plaintext
-
         # --- State Backup for Rollback ---
         state_backup = {
              "RK": self.RK,
@@ -235,12 +231,12 @@ class DoubleRatchetSession:
         }
 
         try:
+            plaintext = self._TrySkippedMessageKeys(header, body)
+            if plaintext is not None:
+                return plaintext
+
             # --- Handle out-of-order (old) messages ---
-            # If the message is from a previous ratchet, we can't decrypt it.
             if header["dh_pub"] != self.DHr_b64:
-                # Note: We compare header['pn'] (previous chain length) with our Nr. 
-                # Logic fixed: self._SkipMessageKeys uses self.Nr vs target.
-                
                 self._SkipMessageKeys(header["pn"])
                 partner_dh_pub_obj = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(header["dh_pub"]))
                 self._DHRatchet_symmetric_step(partner_dh_pub_obj)

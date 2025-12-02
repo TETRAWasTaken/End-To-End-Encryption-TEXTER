@@ -119,6 +119,8 @@ class AppController(QObject):
                 if new_friend:
                     self.chat_view.add_contact(new_friend)
                     self.crypt_services.save_contacts_to_disk()
+                    # Proactively fetch the new friend's key bundle
+                    self.request_bundle_for_partner(new_friend)
 
 
         elif status == "pending_friend_requests":

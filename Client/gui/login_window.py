@@ -12,6 +12,7 @@ class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TEXTER - Login")
+        self.setObjectName("LoginWindow") # Set object name for styling
         self.setMinimumWidth(300)
 
         self.user_input = QLineEdit()
@@ -25,7 +26,7 @@ class LoginWindow(QWidget):
         self.register_btn = QPushButton("Register")
 
         self.status_label = QLabel("Connecting...")
-        self.status_label.setStyleSheet("color: gray")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setWordWrap(True)
 
         # Layout
@@ -44,6 +45,7 @@ class LoginWindow(QWidget):
         self.register_btn.clicked.connect(self.on_register_click)
 
         self.disable_buttons()
+        self.set_status("Connecting...", "info") # Set initial status
 
     def on_login_click(self):
         user = self.user_input.text()
@@ -51,7 +53,7 @@ class LoginWindow(QWidget):
 
         if user and password:
             self.login_requested.emit(user, password)
-            self.status_label.setText("Logging in...")
+            self.set_status("Logging in...", "info")
 
     def on_register_click(self):
         user = self.user_input.text()
@@ -59,20 +61,24 @@ class LoginWindow(QWidget):
 
         if user and password:
             self.registration_requested.emit(user, password)
-            self.status_label.setText("Registering...")
+            self.set_status("Registering...", "info")
 
     @Slot()
     def enable_buttons(self):
         self.login_btn.setEnabled(True)
         self.register_btn.setEnabled(True)
-        self.set_status("Connected. Ready", "green")
+        self.set_status("Connected. Ready", "success")
 
     @Slot()
     def disable_buttons(self):
         self.login_btn.setEnabled(False)
         self.register_btn.setEnabled(False)
 
-    @Slot()
-    def set_status(self, text: str, color: str = "red"):
+    @Slot(str, str)
+    def set_status(self, text: str, status_type: str = "error"):
+        """Sets the status text and a dynamic property for styling."""
         self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}")
+        self.status_label.setProperty("status", status_type)
+        # Re-polish to apply the new style
+        self.style().unpolish(self.status_label)
+        self.style().polish(self.status_label)
