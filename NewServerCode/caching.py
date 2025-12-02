@@ -8,9 +8,9 @@ import threading # Import threading
 from database import DB_connect
 
 
-class caching:
-    def __init__(self, DB: DB_connect.DB_connect):
-        self.DB = DB
+class Caching:
+    def __init__(self, db: DB_connect.DB_connect):
+        self.db = db
         self.ACTIVEUSERS = {} # { websocket : [ user_id , socket_handler ]}
         self._active_users_lock = threading.Lock() # Add a lock for ACTIVEUSERS
 
@@ -93,16 +93,16 @@ class caching:
         :param password: The password hash of the user
         """
 
-        if not self.DB.pool:
+        if not self.db.pool:
             print("Database connection pool is not available. Cannot check credentials.")
             return False
 
         conn = None
         if password:
             try:
-                conn = self.DB.pool.getconn()
+                conn = self.db.pool.getconn()
                 with conn.cursor() as cur:
-                    cur.execute("SELECT 1 FROM user_info WHERE user_id = %s AND password = %s",
+                    cur.execute("SELECT 1 FROM user_info WHERE user_id = %s AND password_hash = %s",
                                 (user_id, password[0]))
                     result = cur.fetchone()
                     return result is not None
@@ -111,10 +111,10 @@ class caching:
                 return False
             finally:
                 if conn:
-                    self.DB.pool.putconn(conn)
+                    self.db.pool.putconn(conn)
         else:
             try:
-                conn = self.DB.pool.getconn()
+                conn = self.db.pool.getconn()
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1 FROM user_info WHERE user_id = %s",
                                 (user_id,))
@@ -125,7 +125,7 @@ class caching:
                 return False
             finally:
                 if conn:
-                    self.DB.pool.putconn(conn)
+                    self.db.pool.putconn(conn)
 
     def insert_credentials(self, user_id: str, password: str) -> bool:
         """
@@ -136,16 +136,16 @@ class caching:
         :return bool:
         """
 
-        if not self.DB.pool:
+        if not self.db.pool:
             print("Database connection pool is not available. Cannot add credential.")
             return False
 
         conn = None
         try:
-            conn = self.DB.pool.getconn()
+            conn = self.db.pool.getconn()
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO user_info (user_id, password) VALUES (%s, %s)",
+                    "INSERT INTO user_info (user_id, password_hash) VALUES (%s, %s)",
                     (user_id, password)
                 )
                 conn.commit()
@@ -158,18 +158,19 @@ class caching:
             return False
         finally:
             if conn:
-                self.DB.pool.putconn(conn)
+                self.db.pool.putconn(conn)
 
 
     def insert_into_textcache(self, encrypted_text: dict, receiver_id: str, sender_id: str, flag: bool = False) -> bool:
         """
         insert the encrypted text into the text cache database.
         :param encrypted_text: The dictionary containing the encrypted payload.
-        :param receiver_id:
-        :param sender_id:
+        :param receiver_id: The receiver's user ID.
+        :param sender_id: The sender's user ID.
+        :param flag: A boolean flag for the message.
         :return bool:
         """
-        if not self.DB.pool:
+        if not self.db.pool:
             print("Database connection pool is not available. Cannot add to cache.")
             return False
 
@@ -177,7 +178,7 @@ class caching:
         try:
             # Convert the dictionary to a JSON string for storage.
             encrypted_text_str = json.dumps(encrypted_text)
-            conn = self.DB.pool.getconn()
+            conn = self.db.pool.getconn()
             with conn.cursor() as cur:
                 if flag:
                     cur.execute(
@@ -198,7 +199,7 @@ class caching:
             return False
         finally:
             if conn:
-                self.DB.pool.putconn(conn)
+                self.db.pool.putconn(conn)
 
     def send_text(self, sender_id: str, receiver_id: str, text: dict, *cache: bool) -> bool:
         """
@@ -245,7 +246,7 @@ class caching:
         """
         conn = None
         try:
-            conn = self.DB.pool.getconn()
+            conn = self.db.pool.getconn()
             
             senders_to_check = []
             if sender_id:
@@ -267,7 +268,7 @@ class caching:
             with conn.cursor() as cur:
                 for a_sender_id in senders_to_check:
                     cur.execute(
-                        "SELECT id, text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = FALSE ORDER BY time_stamp_creation ASC",
+                        "SELECT id, text_cache, time_stamp_creation FROM text_cache WHERE receiver_id = %s AND sender_id = %s AND flag = FALSE ORDER BY time_stamp_creation",
                         (receiver_id, a_sender_id)
                     )
                     results = cur.fetchall()
@@ -276,12 +277,12 @@ class caching:
                         continue
                     
                     with conn.cursor() as update_cur:
-                        for id, text_cache, time_stamp in results:
+                        for msg_id, text_cache, time_stamp in results:
                             text_dict = json.loads(text_cache)
                             if self.send_text(a_sender_id, receiver_id, text_dict, True):
                                 update_cur.execute(
                                     "UPDATE text_cache SET flag = TRUE, time_stamp_last_usage = %s WHERE id=%s",
-                                    (datetime.datetime.now(), id)
+                                    (datetime.datetime.now(), msg_id)
                                 )
                             else:
                                 print(f"Error while sending cached text from {a_sender_id} to {receiver_id}.")
@@ -293,4 +294,4 @@ class caching:
                 conn.rollback()
         finally:
             if conn:
-                self.DB.pool.putconn(conn)
+                self.db.pool.putconn(conn)

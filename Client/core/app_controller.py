@@ -112,6 +112,14 @@ class AppController(QObject):
         elif status == "friend_request_status":
             if self.chat_view:
                 self.chat_view.show_friend_request_status(message)
+        
+        elif status == "friend_request_accepted":
+            if self.chat_view:
+                new_friend = message.get("friend_username")
+                if new_friend:
+                    self.chat_view.add_contact(new_friend)
+                    self.crypt_services.save_contacts_to_disk()
+
 
         elif status == "pending_friend_requests":
             if self.chat_view:
@@ -140,12 +148,12 @@ class AppController(QObject):
                 print("Received chat message but no chat view is active.")
 
         elif status == "User_Select":
-            if message == "User Available":
+            if message in ("User Available", "User Available And Friends"):
                 if self.chat_view:
                     self.chat_view.set_status("User is available, fetching keys...", "blue")
                     self.request_bundle_for_partner(self.chat_view.current_partner)
 
-            elif message == "User Not Online":
+            elif message in ("User Not Online", "User Not Online but Friends"):
                 if self.chat_view:
                     self.chat_view.set_status("User is offline. They will receive the message upon login.", "orange")
                     self.request_bundle_for_partner(self.chat_view.current_partner)

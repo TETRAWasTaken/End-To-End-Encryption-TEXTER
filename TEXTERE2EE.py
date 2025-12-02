@@ -2,7 +2,9 @@ import sys
 import qasync
 import asyncio
 import os
+import shutil
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QStandardPaths
 from Client.core.app_controller import AppController
 
 global app, controller, loop
@@ -14,6 +16,14 @@ if __name__ == "__main__":
 
         app.setApplicationName("TEXTERE2EE")
         app.setOrganizationName("Anshumaan Soni")
+
+        # --- Clean AppData for Dev ---
+        if '--clean' in sys.argv:
+            data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+            if os.path.exists(data_dir):
+                print(f"Dev Mode: Deleting old data directory: {data_dir}")
+                shutil.rmtree(data_dir, ignore_errors=True)
+        # --- End Clean ---
 
         # --- Apply Stylesheet ---
         try:

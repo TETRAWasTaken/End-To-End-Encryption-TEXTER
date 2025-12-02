@@ -188,3 +188,8 @@ class ChatWindow(QMainWindow):
         else:
             self.friend_request_status_label.setText(f"Friend request status: {status}")
             self.friend_request_status_label.setStyleSheet("color: #D8DEE9;") # Nord Snow Storm
+    
+    def add_contact(self, contact_name: str):
+        """Adds a single contact to the list if it doesn't already exist."""
+        if not self.contact_list.findItems(contact_name, Qt.MatchFlag.MatchExactly):
+            self.contact_list.addItem(contact_name)
