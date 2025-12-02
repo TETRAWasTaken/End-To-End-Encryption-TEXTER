@@ -1,6 +1,7 @@
 import sys
 import qasync
 import asyncio
+import os
 from PySide6.QtWidgets import QApplication
 from Client.core.app_controller import AppController
 
@@ -13,6 +14,16 @@ if __name__ == "__main__":
 
         app.setApplicationName("TEXTERE2EE")
         app.setOrganizationName("Anshumaan Soni")
+
+        # --- Apply Stylesheet ---
+        try:
+            stylesheet_path = os.path.join(os.path.dirname(__file__), "Client/gui/stylesheet.qss")
+            with open(stylesheet_path, "r") as f:
+                app.setStyleSheet(f.read())
+        except FileNotFoundError:
+            print("Stylesheet not found. Using default styles.")
+        except Exception as e:
+            print(f"Error loading stylesheet: {e}")
 
         # 2. Prevent app from quitting when we close the login window
         app.setQuitOnLastWindowClosed(True)

@@ -54,6 +54,7 @@ class AppController(QObject):
             self.chat_view.send_message_requested.connect(self.handle_send_message)
             self.chat_view.partner_selected.connect(self.handle_partner_select)
             self.chat_view.friend_request_sent.connect(self.handle_friend_request)
+            self.chat_view.friend_request_accepted.connect(self.handle_friend_request_accepted)
 
     # Slots
 
@@ -217,6 +218,15 @@ class AppController(QObject):
             "command": "friend_request",
             "from_user": self.username,
             "to_user": friend_username
+        }
+        self.network.send_payload(json.dumps(payload))
+
+    @Slot(str)
+    def handle_friend_request_accepted(self, from_user: str):
+        payload = {
+            "command": "accept_friend_request",
+            "from_user": from_user,
+            "to_user": self.username
         }
         self.network.send_payload(json.dumps(payload))
 
