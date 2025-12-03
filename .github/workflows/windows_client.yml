@@ -24,12 +24,13 @@ jobs:
 
       - name: Build Standalone Executable with Nuitka
         run: |
-          python -m nuitka --standalone --windows-disable-console --assume-yes-for-downloads ^
-          --enable-plugin=pyside6 ^
-          --include-package-data=certifi ^
-          --include-package=websockets ^
-          --include-data-file="Client/gui/stylesheet.qss=Client/gui/stylesheet.qss" ^
-          --output-dir=build ^
+          python -m nuitka --standalone --windows-disable-console --assume-yes-for-downloads `
+          --enable-plugin=pyside6 `
+          --enable-plugin=asyncio `
+          --include-package-data=certifi `
+          --include-package=websockets `
+          --include-data-file="Client/gui/stylesheet.qss=Client/gui/stylesheet.qss" `
+          --output-dir=build `
           TEXTERE2EE.py
 
       - name: Upload Artifact
