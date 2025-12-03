@@ -13,7 +13,7 @@ from Client.services.double_ratchet import DoubleRatchetSession
 
 class DatabaseService:
     """
-    Manages all interactions with the local, encrypted SQLite database.
+    Manages all interactions with the local, SQLite database.
     This is NOT thread-safe by default. It should be accessed from a single
     thread or have external locking.
     """
@@ -24,18 +24,12 @@ class DatabaseService:
 
     def connect(self, file_key: bytes):
         """
-        Connects to the SQLite database.
-        NOTE: This is a placeholder for a real encrypted connection.
-        For a production app, you would use SQLCipher here.
-        Example with pysqlcipher3:
-        # self.conn = pysqlcipher3.connect(self._db_path)
-        # self.conn.execute(f"PRAGMA key = \"x'{file_key.hex()}'\"")
+        Connects to the standard SQLite database.
+        NOTE: This is a placeholder and does not use SQLCipher.
         """
-        # For simplicity in this example, we are not using a live
-        # SQLCipher library, but the structure is here.
         self.conn = sqlite3.connect(self._db_path)
         self.conn.row_factory = sqlite3.Row
-        print(f"Database connected at {self._db_path}. (Note: Encryption via SQLCipher is recommended)")
+        print(f"Database connected at {self._db_path}. (Note: Using standard, unencrypted SQLite)")
 
     def close(self):
         """Closes the database connection."""
