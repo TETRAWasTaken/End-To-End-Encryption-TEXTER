@@ -26,7 +26,6 @@ jobs:
         run: |
           python -m nuitka --standalone --windows-disable-console --assume-yes-for-downloads `
           --enable-plugin=pyside6 `
-          --enable-plugin=asyncio `
           --include-package-data=certifi `
           --include-package=websockets `
           --include-data-file="Client/gui/stylesheet.qss=Client/gui/stylesheet.qss" `
