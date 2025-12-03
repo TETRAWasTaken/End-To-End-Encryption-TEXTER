@@ -21,6 +21,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install nuitka
+          pip install imageio
 
       - name: Build Standalone Executable with Nuitka
         run: |
