@@ -21,12 +21,11 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install nuitka
-          pip install imageio
 
-      - name: Build Standalone Executable with Nuitka
+      - name: Build Single EXE with Nuitka
         run: |
-          python -m nuitka --onefile --standalone --windows-disable-console --assume-yes-for-downloads `
-          --windows-icon-from-ico=LOGO_win.png `
+          python -m nuitka --onefile --windows-disable-console --assume-yes-for-downloads `
+          --windows-icon-from-ico=LOGO.icns `
           --enable-plugin=pyside6 `
           --include-package-data=certifi `
           --include-package=websockets `
@@ -37,5 +36,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TEXTERE2EE-Windows-Build
-          path: build/TEXTERE2EE.dist/  # Path to the entire distribution folder
+          name: TEXTERE2EE-Windows-EXE
+          path: build/TEXTERE2EE.exe  # Path to the single executable
