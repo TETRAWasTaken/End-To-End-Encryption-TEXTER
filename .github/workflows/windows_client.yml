@@ -25,6 +25,7 @@ jobs:
       - name: Build Standalone Executable with Nuitka
         run: |
           python -m nuitka --standalone --windows-disable-console --assume-yes-for-downloads `
+          --windows-icon-from-ico=LOGO_win.png `
           --enable-plugin=pyside6 `
           --include-package-data=certifi `
           --include-package=websockets `
