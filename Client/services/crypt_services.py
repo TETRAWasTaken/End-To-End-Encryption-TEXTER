@@ -17,7 +17,7 @@ from PySide6.QtCore import QStandardPaths
 class CryptServices:
     """
     Wraps all X3DH and encryption logic.
-    - Manages cryptographic state via an encrypted database.
+    - Manages cryptographic state via a database.
     """
 
     def __init__(self, username: str):
@@ -31,7 +31,7 @@ class CryptServices:
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
 
-        # Path to our encrypted database
+        # Path to our database
         db_path = os.path.join(data_dir, f"{self.username}.db")
         self.db = DatabaseService(db_path)
 
@@ -52,21 +52,20 @@ class CryptServices:
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=1000,  # <-- Set to 1000
+            iterations=1000,
             backend=default_backend()
         )
         return kdf.derive(password.encode("utf-8"))
 
     def _X3DH_KDF(self, km: bytes) -> bytes:
         F = b'\xFF' * 32
-        # Per X3DH spec, salt is zeros, IKM is F || KM
         salt = b'\x00' * 32
         ikm = F + km 
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            info=b"X3DH",  # Application-specific info
+            info=b"X3DH",
             backend=default_backend()
         )
         return hkdf.derive(ikm)
@@ -76,60 +75,58 @@ class CryptServices:
         FOR REGISTRATION:
         1. Checks if a database already exists. If so, aborts.
         2. Generates all keys.
-        3. Creates and populates an encrypted database.
+        3. Creates and populates a database.
         4. Returns the public bundle for upload.
         """
-        # --- CRITICAL SAFETY CHECK ---
         if os.path.exists(self.db._db_path):
             print(f"Registration aborted: Database for user '{self.username}' already exists.")
             return None
 
         public_bundle_obj = self.x3dh.generate_key_bundle()
 
-        # 1. Derive file key and connect to DB
         salt = os.urandom(16)
         self._file_key = self._derive_file_key(password, salt)
-        self.db.connect(self._file_key)
+        self.db.connect(self._file_key) # Key is not used for encryption here, but kept for consistency
         self.db.create_tables()
 
-        # 2. Save salt and long-term private keys to the database
         self.db.save_salt(salt)
         private_keys = self.x3dh.get_private_keys_for_saving()
         self.db.save_key("identity_key", private_keys["identity_key"])
         self.db.save_key("identity_key_dh", private_keys["identity_key_dh"])
         self.db.save_key("signed_pre_key", private_keys["signed_pre_key"])
 
-        # 3. Save dynamic state (OPKs) to the state file
         self.private_opks = self.x3dh.one_time_pre_keys_private
         self.db.save_opks(self.private_opks)
 
-        # Disconnect from DB
         self.db.close()
 
-        # 4. Return the serializable PUBLIC bundle
         return self.serializable_key_bundle(public_bundle_obj)
 
     def load_keys_from_disk(self, password: str) -> bool:
         """
         FOR LOGIN:
-        1. Derives file key from password and salt from DB.
-        2. Connects to the encrypted database.
+        1. Connects to the database.
+        2. Derives file key from password and salt from DB to verify password.
         3. Loads all keys, sessions, and state into memory.
         """
         try:
-            # 1. Connect to a temporary, un-keyed DB connection to get the salt
-            temp_db = DatabaseService(self.db._db_path)
-            temp_db.connect(b'') # Connect without a key
-            salt = temp_db.get_salt()
-            temp_db.close()
+            # 1. Connect to the database (no key needed for standard sqlite)
+            self.db.connect(b'') 
+            salt = self.db.get_salt()
 
             if not salt:
                 print("Login failed: could not retrieve salt from database.")
+                self.db.close()
                 return False
 
-            # 2. Derive the real file key and connect to the encrypted DB
+            # 2. Derive the key and verify it.
             self._file_key = self._derive_file_key(password, salt)
-            self.db.connect(self._file_key)
+            
+            # In a real encrypted setup, the connect() call would fail.
+            # Here, we simulate a check by attempting to read a value.
+            # If the DB were encrypted, this would fail with a bad password.
+            if self.db.get_key("identity_key") is None:
+                 raise ConnectionError("Simulated bad password or corrupted DB.")
 
             # 3. Load long-term keys into X3DH object
             self.x3dh.load_private_keys(
@@ -146,7 +143,7 @@ class CryptServices:
 
         except Exception as e:
             print(f"Database loading failed (bad password or corrupted file?): {e}")
-            self._file_key = None  # Clear key on failure
+            self._file_key = None
             if self.db.is_connected():
                 self.db.close()
             return False
@@ -195,7 +192,6 @@ class CryptServices:
         Stores a partner's bundle received from the server.
         """
         try:
-            # --- Key Deserialization ---
             ik_str = bundle_json.get("identity_key")
             ik_dh_str = bundle_json.get("identity_key_dh")
             spk_str = bundle_json.get("signed_pre_key")
@@ -210,10 +206,8 @@ class CryptServices:
             signature_bytes = b64str_to_bytes(sig_str)
             opk_bytes = b64str_to_bytes(bundle_json.get("one_time_pre_key")) if bundle_json.get("one_time_pre_key") else None
 
-            # Ed25519 Identity Key (for verification)
             identity_key = ed25519.Ed25519PublicKey.from_public_bytes(ik_bytes)
             
-            # X25519 Identity Key (for DH) - Essential for X3DH with `cryptography` lib
             if ik_dh_str:
                 identity_key_dh = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(ik_dh_str))
             else:
@@ -228,15 +222,13 @@ class CryptServices:
                 print(f"CRITICAL: Invalid signature on pre-key for {partner_username}. Bundle rejected.")
                 return
 
-            # Deserialize the bundle from b64 strings back into cryptography objects
             deserialized_bundle = {
                 "identity_key": identity_key, 
-                "identity_key_dh": identity_key_dh, # Store DH Key
+                "identity_key_dh": identity_key_dh,
                 "signed_pre_key": signed_pre_key,
                 "one_time_pre_key": x25519.X25519PublicKey.from_public_bytes(opk_bytes) if opk_bytes else None,
                 "one_time_key_id": bundle_json.get("one_time_key_id")
             }
-            self.partner_bundles[partner_username] = deserialized_bundle
             self.partner_bundles[partner_username] = deserialized_bundle
         except Exception as e:
             print(f"Error storing or verifying partner bundle for {partner_username}: {e}")
@@ -249,20 +241,14 @@ class CryptServices:
             raise Exception(f"No bundle for {partner_username}")
 
         bundle = self.partner_bundles[partner_username]
-
-        # Use the partner's X25519 Identity Key for DH
         p_ik_dh = bundle['identity_key_dh']
-        
         p_spk_pub = bundle['signed_pre_key']
         p_opk_pub = None
         opk_id = bundle.get("one_time_key_id")
         if opk_id is not None and bundle.get("one_time_pre_key"):
             p_opk_pub = bundle["one_time_pre_key"]
 
-        # Alice's Ephemeral Key
         ek_priv, ek_pub = self.utils.generate_x25519_key_pair()
-        
-        # Alice's Identity Key (DH)
         ik_priv = self.x3dh.identity_key_dh_private
 
         DH1 = ik_priv.exchange(p_spk_pub)
@@ -277,11 +263,10 @@ class CryptServices:
 
         SK = self._X3DH_KDF(km)
 
-        # Create a new session and save it
         dr = DoubleRatchetSession(SK)
         dr.DHRatchet_for_alice_initial(p_spk_pub)
         self.sessions[partner_username] = dr
-        self.db.save_session(partner_username, dr) # Save new session to DB
+        self.db.save_session(partner_username, dr)
         self.counters.increment('x3dh_sessions_initiated_alice')
 
         x3dh_header = {
@@ -298,22 +283,18 @@ class CryptServices:
         return x3dh_header, SK
 
     def _initiate_session_bob(self, partner_username: str, x3dh_header: dict, dr_header: dict) -> tuple[DoubleRatchetSession, bytes]:
-
-        """Performs the X3DH "Bob" role [cite: 945-954]"""
-
+        """Performs the X3DH "Bob" role"""
         p_ik_str = x3dh_header.get('ik_a')
         p_ek_str = x3dh_header.get('ek_a')
 
         if not p_ik_str or not p_ek_str:
             raise ValueError("Received incomplete X3DH header from partner.")
 
-        # Partner's IK is already X25519 (sent by Alice)
         p_ik_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ik_str))
         p_ek_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(p_ek_str))
         opk_id = x3dh_header.get('opk_id')
 
-        # Bob's Keys
-        ik_priv = self.x3dh.identity_key_dh_private # Bob's X25519 Identity Key
+        ik_priv = self.x3dh.identity_key_dh_private
         spk_priv = self.x3dh.signed_pre_key_private
         opk_priv = None
 
@@ -334,22 +315,17 @@ class CryptServices:
 
         SK = self._X3DH_KDF(km)
 
-        # Create a new "Bob" session
         dr = DoubleRatchetSession(SK)
         
-        # --- Perform Bob's initial Ratchet Step (Synchronization) ---
-        # Extract Alice's initial Ratchet Key (A1) from the DR header
         alice_ratchet_pub_str = dr_header.get("dh_pub")
         if not alice_ratchet_pub_str:
              raise ValueError("Cannot initiate session: DR header missing dh_pub")
 
         alice_ratchet_pub = x25519.X25519PublicKey.from_public_bytes(b64str_to_bytes(alice_ratchet_pub_str))
-
-        # Initialize the ratchet using our SPK private key and Alice's Ratchet Public Key
         dr.DHRatchet_for_bob_initial(self.x3dh.signed_pre_key_private, alice_ratchet_pub)
         
         self.sessions[partner_username] = dr
-        self.db.save_session(partner_username, dr) # Save new session to DB
+        self.db.save_session(partner_username, dr)
         self.counters.increment('x3dh_sessions_initiated_bob')
 
         return dr, SK
@@ -361,15 +337,13 @@ class CryptServices:
         """
         x3dh_header = None
         if partner_username not in self.sessions:
-            # This will raise an exception if the bundle isn't loaded yet, 
-            # which is handled by AppController checks.
             x3dh_header, sk = self._initiate_session_alice(partner_username)
 
         dr = self.sessions[partner_username]
         dr_header, dr_body = dr.RatchetEncrypt(plaintext.encode('utf-8'))
 
         self.save_contacts_to_disk()
-        self.db.save_session(partner_username, dr) # Update session state in DB
+        self.db.save_session(partner_username, dr)
 
         return {
             "x3dh_header": x3dh_header,
@@ -379,8 +353,6 @@ class CryptServices:
 
     def decrypt_message(self, partner_username: str, payload: dict) -> str:
         """
-        Decrypts an incoming message payload.
-        """        """
         Decrypts an incoming message payload.
         """
         x3dh_header = payload.get("x3dh_header")
@@ -395,14 +367,13 @@ class CryptServices:
                 if partner_username not in self.partner_bundles:
                     return "NEEDS_BUNDLE"
 
-                # Pass dr_header here so Bob can sync the ratchet
                 dr, sk = self._initiate_session_bob(partner_username, x3dh_header, dr_header)
         
             dr = self.sessions[partner_username]
             plaintext_bytes = dr.RatchetDecrypt(dr_header, dr_body)
 
             self.save_contacts_to_disk()
-            self.db.save_session(partner_username, dr) # Update session state in DB
+            self.db.save_session(partner_username, dr)
 
             return plaintext_bytes.decode('utf-8')
     

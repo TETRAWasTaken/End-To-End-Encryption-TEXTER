@@ -8,9 +8,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -19,15 +20,20 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install -r requirements.txt
-          pip install nuitka certifi idna websockets
+          pip install nuitka
 
-      - name: Build Single EXE with Nuitka
+      - name: Build Standalone Executable with Nuitka
         run: |
-          # The flag --onefile is the key here
-          python -m nuitka --onefile --windows-disable-console --assume-yes-for-downloads --enable-plugin=pyside6 --include-package-data=certifi --include-module=ssl --include-module=socket --include-module=idna --include-package=websockets --output-dir=build TEXTERE2EE.py
+          python -m nuitka --standalone --windows-disable-console --assume-yes-for-downloads ^
+          --enable-plugin=pyside6 ^
+          --include-package-data=certifi ^
+          --include-package=websockets ^
+          --include-data-file="Client/gui/stylesheet.qss=Client/gui/stylesheet.qss" ^
+          --output-dir=build ^
+          TEXTERE2EE.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TEXTERE2EE_Single_File
-          path: build/TEXTERE2EE.exe  # Note: It looks for .exe now, not .dist folder
+          name: TEXTERE2EE-Windows-Build
+          path: build/TEXTERE2EE.dist/  # Path to the entire distribution folder
