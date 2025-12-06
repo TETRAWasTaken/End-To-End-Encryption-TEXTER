@@ -237,6 +237,7 @@ class caching:
                 conn.commit()
                 return True
         except (Exception, psycopg2.DatabaseError) as e:
+            print(f"Error caching message: {e}")
             if conn: conn.rollback()
             return False
         finally:
@@ -271,7 +272,7 @@ class caching:
                     command_payload = {'method': 'send_text', 'args': message_dict}
 
                     if hasattr(socket_handler, '_queue_external_command'):
-                        socket_handler._queue_external_command(command_payload)
+                        socket_handler.queue_external_command(command_payload)
                     else:
                         socket_handler.command_queue.put(command_payload)
 
