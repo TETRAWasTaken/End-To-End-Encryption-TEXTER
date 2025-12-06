@@ -54,6 +54,7 @@ class AppController(QObject):
         self.network.disconnected.connect(self.on_network_disconnected)
         self.network.message_received.connect(self.handle_network_message)
         self.network.error_occured.connect(self.on_network_error)
+        self.network.reconnecting.connect(self.on_network_reconnecting)
 
     def connect_login_signals(self):
         """
@@ -73,6 +74,18 @@ class AppController(QObject):
             self.chat_view.partner_selected.connect(self.handle_partner_select)
             self.chat_view.friend_request_sent.connect(self.handle_friend_request)
             self.chat_view.friend_request_accepted.connect(self.handle_friend_request_accepted)
+
+    @Slot()
+    def on_network_reconnecting(self):
+        """
+        Slot that handles the reconnection attempt to the server.
+        """
+        view = self.chat_view if self.chat_view and self.chat_view.isVisible() else self.login_view
+
+        if hasattr(view, 'set_status'):
+            view.set_status("Connection Lost. Reconnecting...", "orange")
+        if hasattr(view, 'disable_buttons'):
+            view.disable_buttons()
 
     @Slot()
     def on_network_connected(self):
@@ -124,37 +137,54 @@ class AppController(QObject):
         view = self.login_view if self.current_state in ("login", "register", "register_keys") else self.chat_view
 
         if status == "ok":
-            if message == "success":
+            if message == "success" or (isinstance(message, dict) and message.get("text") == "success"):
+
+                if isinstance(message, dict) and "session_token" in message:
+                    token = message["session_token"]
+                    self.network.set_session_token(token)
+
                 self.current_state = "chat"
                 self.on_login_success()
+                return
+
             elif message == "Registration Successful":
                 view.set_status("Registered! Publishing keys...", "blue")
                 self.current_state = "register_keys"
                 self.network.schedule_task(self.handle_publish_keys())
+
             elif message == "keys_ok":
                 view.set_status("Keys published! You can log in.", "green")
                 self.current_state = "login"
+
         elif status == "error":
             view.set_status(f"Error: {message}", "red")
+
         elif status == "new_friend_request" and self.chat_view:
             self.chat_view.add_friend_request_notification(message.get("from"))
+
         elif status == "friend_request_status" and self.chat_view:
             self.chat_view.show_friend_request_status(message)
+
         elif status == "friend_request_accepted" and self.chat_view:
             new_friend = message.get("friend_username")
             if new_friend:
                 self.chat_view.add_contact(new_friend)
                 self.crypt_services.save_contacts_to_disk()
                 self.request_bundle_for_partner(new_friend)
+
         elif status == "pending_friend_requests" and self.chat_view:
             for from_user in message:
                 self.chat_view.add_friend_request_notification(from_user)
+
         elif status == "Encrypted" and self.chat_view:
             self.handle_encrypted_message(message)
+
         elif status == "User_Select" and self.chat_view:
             self.handle_user_select_response(message)
+
         elif status == "key_bundle_ok" and self.chat_view:
             self.handle_key_bundle_response(message)
+
         elif status == "key_bundle_fail" and self.chat_view:
             self.handle_key_bundle_failure(message)
 
@@ -238,10 +268,14 @@ class AppController(QObject):
         self.username = username
         self.login_view.set_status("Loading keys...", "blue")
         self.crypt_services = CryptServices(username)
+
         if not self.crypt_services.load_keys_from_disk(password):
             self.login_view.set_status("Invalid credentials", "red")
             self.current_state = "login"
             return
+
+        self.network.set_credentials(username, password)
+
         self.login_view.set_status("Logging in...", "blue")
         self.current_state = "login"
         login_payload = {"command": "login", "credentials": {"username": username, "password": password}}
@@ -384,8 +418,14 @@ class AppController(QObject):
         Handles the successful login by switching to the chat view and
         performing post-login tasks.
         """
+        if self.chat_view and self.chat_view.isVisible():
+            self.chat_view.set_status(f"Connected as {self.username}", "green")
+            self.chat_view.set_input_enabled(True)
+            return
+
         if self.crypt_services:
             self.crypt_services.save_contacts_to_disk()
+
         self.chat_view = ChatWindow(self.username)
         self.connect_chat_signals()
         self.load_contact_list()
