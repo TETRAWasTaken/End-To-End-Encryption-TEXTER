@@ -309,11 +309,11 @@ class Server:
                     target_user_info = self.caching.get_active_user_info(target_websocket)
                     if target_user_info and target_user_info[1]:
                         target_socket_handler = target_user_info[1]
-                        notification = self.caching.payload("new_friend_request", {"from": from_user})
+                        notification = self.caching.payload("newx_friend_request", {"from": from_user})
                         notification_dict = json.loads(notification)
                         command_payload = {'method': 'send_text', 'args': notification_dict}
 
-                        if hasattr(target_socket_handler, '_queue_external_command'):
+                        if hasattr(target_socket_handler, 'queue_external_command'):
                             target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_status", "failed")
@@ -373,7 +373,7 @@ class Server:
 
                         command_payload = {'method': 'send_text', 'args': notification_dict}
 
-                        if hasattr(target_socket_handler, '_queue_external_command'):
+                        if hasattr(target_socket_handler, 'queue_external_command'):
                             target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_accepted_status", "failed")
