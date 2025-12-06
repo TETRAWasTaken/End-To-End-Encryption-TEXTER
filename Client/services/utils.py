@@ -1,6 +1,5 @@
 from typing import Optional, Tuple
-from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -12,8 +11,8 @@ import threading
 ROOT_KEY_LEN = 32
 CHAIN_KEY_LEN = 32
 MESSAGE_KEY_LEN = 32
-AES_GCM_NONCE_BYTES = 12  # 96 bits
-AES_GCM_TAG_BYTES = 16  # 128 bits
+AES_GCM_NONCE_BYTES = 12
+AES_GCM_TAG_BYTES = 16
 HKDF_HASH_ALGORITHM = hashes.SHA256()
 
 class CryptoCounters:
@@ -31,6 +30,7 @@ class CryptoCounters:
         return cls._instance
 
     def reset(self):
+        """Resets all counters to zero."""
         self.x3dh_sessions_initiated_alice = 0
         self.x3dh_sessions_initiated_bob = 0
         self.messages_encrypted = 0
@@ -40,12 +40,19 @@ class CryptoCounters:
         self.old_messages_discarded = 0
         self.bundle_validation_failures = 0
 
-    def increment(self, counter_name):
+    def increment(self, counter_name: str):
+        """
+        Increments a specific counter by one.
+
+        Args:
+            counter_name: The name of the counter attribute to increment.
+        """
         with self._lock:
             if hasattr(self, counter_name):
                 setattr(self, counter_name, getattr(self, counter_name) + 1)
 
     def __str__(self):
+        """Returns a string representation of the current statistics."""
         return (
             "--- Crypto Statistics ---\n"
             f"X3DH Handshakes (Alice): {self.x3dh_sessions_initiated_alice}\n"
@@ -59,52 +66,70 @@ class CryptoCounters:
             "-------------------------"
         )
 
-class EncryptionUtil():
+class EncryptionUtil:
+    """
+    A utility class providing common cryptographic functions.
+
+    This class wraps fundamental cryptographic operations such as key
+    generation, key derivation, and authenticated encryption, making them
+    easily accessible throughout the application.
+    """
     def __init__(self):
+        """Initializes the EncryptionUtil and its associated CryptoCounters."""
         self.counters = CryptoCounters()
 
-    def generate_x25519_key_pair(self):
+    def generate_x25519_key_pair(self) -> Tuple[x25519.X25519PrivateKey, x25519.X25519PublicKey]:
         """
-        Generates a private and public key pair for use in the X25519 algorithm.
-        :return: A tuple containing the private key and public key.
+        Generates an X25519 key pair for Diffie-Hellman key exchange.
+
+        Returns:
+            A tuple containing the private and public keys.
         """
         private_key = x25519.X25519PrivateKey.generate()
-        public_key = private_key.public_key()
-        return private_key, public_key
+        return private_key, private_key.public_key()
 
-    def generate_ed25519_key_pair(self):
+    def generate_ed25519_key_pair(self) -> Tuple[ed25519.Ed25519PrivateKey, ed25519.Ed25519PublicKey]:
         """
-        Generates a private and public key pair for use in the Ed25519 algorithm.
-        :return: A tuple containing the private key and public key.
+        Generates an Ed25519 key pair for digital signatures.
+
+        Returns:
+            A tuple containing the private and public keys.
         """
         private_key = ed25519.Ed25519PrivateKey.generate()
-        public_key = private_key.public_key()
-        return private_key, public_key
+        return private_key, private_key.public_key()
 
-    def derive_HKDF_key(self, key, salt, info):
+    def derive_HKDF_key(self, key: bytes, salt: bytes, info: bytes) -> bytes:
         """
-        Derives a key using HKDF.
-        :param key: The key to derive from.
-        :param salt: The salt to use.
-        :param info: The info to use.
-        :return: The derived key.
+        Derives a new key using the HKDF standard.
+
+        Args:
+            key: The input key material.
+            salt: A non-secret salt value.
+            info: Optional context and application specific information.
+
+        Returns:
+            The derived key of length CHAIN_KEY_LEN.
         """
-        hkdf = HKDF(algorithm=HKDF_HASH_ALGORITHM,
-                    length=CHAIN_KEY_LEN,
-                    salt=salt,
-                    info=info,
-                    backend=default_backend()
-                    )
+        hkdf = HKDF(
+            algorithm=HKDF_HASH_ALGORITHM,
+            length=CHAIN_KEY_LEN,
+            salt=salt,
+            info=info,
+            backend=default_backend()
+        )
         return hkdf.derive(key)
 
-    def encrypt_aes_gcm(self, key: bytes, plaintext: bytes, associated_data: Optional[bytes] = None) -> Tuple[
-        bytes, bytes, bytes]:
+    def encrypt_aes_gcm(self, key: bytes, plaintext: bytes, associated_data: Optional[bytes] = None) -> Tuple[bytes, bytes, bytes]:
         """
         Encrypts plaintext using AES-256-GCM.
-        :param key: The key to use for encryption.
-        :param plaintext: The plaintext to encrypt.
-        :param associated_data: Additional data to authenticate.
-        :return: A tuple containing ciphertext, nonce, and tag.
+
+        Args:
+            key: The 32-byte encryption key.
+            plaintext: The data to encrypt.
+            associated_data: Optional data to authenticate but not encrypt.
+
+        Returns:
+            A tuple containing the ciphertext, nonce, and authentication tag.
         """
         nonce = os.urandom(AES_GCM_NONCE_BYTES)
         cipher = Cipher(algorithms.AES(key), modes.GCM(nonce), backend=default_backend())
@@ -112,27 +137,51 @@ class EncryptionUtil():
         if associated_data:
             encryptor.authenticate_additional_data(associated_data)
         ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-        tag = encryptor.tag
         self.counters.increment('messages_encrypted')
-        return ciphertext, nonce, tag
+        return ciphertext, nonce, encryptor.tag
 
-    def decrypt_aes_gcm(self, key: bytes, ciphertext: bytes, nonce: bytes, tag: bytes,
-                        associated_data: Optional[bytes] = None) -> bytes:
+    def decrypt_aes_gcm(self, key: bytes, ciphertext: bytes, nonce: bytes, tag: bytes, associated_data: Optional[bytes] = None) -> bytes:
         """
         Decrypts ciphertext using AES-256-GCM.
-        Raises InvalidTag exception on authentication failure.
-        :param key: The key to use for decryption.
-        :param ciphertext: The ciphertext to decrypt.
-        :param nonce: The nonce used for encryption.
-        :param tag: The tag used for authentication.
-        :param associated_data: Additional data to authenticate.
-        :return: The decrypted plaintext.
+
+        Args:
+            key: The 32-byte decryption key.
+            ciphertext: The data to decrypt.
+            nonce: The nonce used during encryption.
+            tag: The authentication tag to verify.
+            associated_data: Optional authenticated data to verify.
+
+        Returns:
+            The decrypted plaintext.
+
+        Raises:
+            InvalidTag: If the authentication check fails.
         """
         cipher = Cipher(algorithms.AES(key), modes.GCM(nonce, tag), backend=default_backend())
         decryptor = cipher.decryptor()
         if associated_data:
             decryptor.authenticate_additional_data(associated_data)
-        
         plaintext = decryptor.update(ciphertext) + decryptor.finalize()
         self.counters.increment('messages_decrypted')
         return plaintext
+
+    def hkdf(self, input_key_material: bytes, salt: bytes, length: int = 32) -> bytes:
+        """
+        Performs a single HKDF extraction and expansion.
+
+        Args:
+            input_key_material: The input keying material.
+            salt: The salt value.
+            length: The desired output length in bytes.
+
+        Returns:
+            The derived key.
+        """
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=length,
+            salt=salt,
+            info=b'handshake data',
+            backend=default_backend()
+        )
+        return hkdf.derive(input_key_material)

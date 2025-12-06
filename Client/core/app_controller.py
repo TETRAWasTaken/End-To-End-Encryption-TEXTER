@@ -8,62 +8,86 @@ from Client.services.network_service import NetworkService
 from Client.services.crypt_services import CryptServices
 
 class AppController(QObject):
+    """
+    The main controller for the client application.
+
+    This class orchestrates the interactions between the GUI (LoginWindow,
+    ChatWindow), the network service, and the cryptography service. It manages
+    the application's state, handles user input, and processes messages
+    received from the server.
+    """
     def __init__(self):
+        """
+        Initializes the AppController, setting up the initial state, services,
+        and GUI components.
+        """
         super().__init__()
 
-        # State
         self.username = None
         self.current_state = "Login"
         self.public_bundle = None
-        self.pending_messages = {} # Cache for messages waiting for a bundle
+        self.pending_messages = {}
 
-        # Create Services
         self.network = NetworkService()
-
-        # Create GUI
         self.login_view = LoginWindow()
         self.chat_view = None
         self.crypt_services = None
 
-        # Connect Signals
         self.connect_network_signals()
         self.connect_login_signals()
 
     def run(self):
         """
-        Starts the Application
+        Starts the application by showing the login window and initiating the
+        network connection.
         """
         self.login_view.show()
-        self.network.start()  # Start the background thread
-        self.network.connect()  # Schedule the connection
-
-    # Mapping the signals
+        self.network.start()
+        self.network.connect()
 
     def connect_network_signals(self):
+        """
+        Connects signals from the NetworkService to the appropriate slots in
+        this controller.
+        """
         self.network.connected.connect(self.on_network_connected)
         self.network.disconnected.connect(self.on_network_disconnected)
         self.network.message_received.connect(self.handle_network_message)
         self.network.error_occured.connect(self.on_network_error)
 
     def connect_login_signals(self):
+        """
+        Connects signals from the LoginWindow to the appropriate slots in this
+        controller.
+        """
         self.login_view.login_requested.connect(self.handle_login_request)
         self.login_view.registration_requested.connect(self.handle_register_request)
 
     def connect_chat_signals(self):
+        """
+        Connects signals from the ChatWindow to the appropriate slots in this
+        controller.
+        """
         if self.chat_view:
             self.chat_view.send_message_requested.connect(self.handle_send_message)
             self.chat_view.partner_selected.connect(self.handle_partner_select)
             self.chat_view.friend_request_sent.connect(self.handle_friend_request)
             self.chat_view.friend_request_accepted.connect(self.handle_friend_request_accepted)
 
-    # Slots
-
     @Slot()
     def on_network_connected(self):
+        """
+        Slot that handles the successful connection to the server by enabling
+        the login view buttons.
+        """
         self.login_view.enable_buttons()
 
     @Slot()
     def on_network_disconnected(self):
+        """
+        Slot that handles disconnection from the server, updating the UI to
+        reflect the disconnected state.
+        """
         view = self.chat_view if self.chat_view and self.chat_view.isVisible() else self.login_view
         if hasattr(view, 'set_status'):
             view.set_status("Disconnected", "red")
@@ -71,7 +95,14 @@ class AppController(QObject):
             view.disable_buttons()
 
     @Slot(str)
-    def on_network_error(self, err_message):
+    def on_network_error(self, err_message: str):
+        """
+        Slot that handles network errors, displaying an error message in the
+        current view.
+
+        Args:
+            err_message: The error message received from the network service.
+        """
         view = self.chat_view if self.chat_view and self.chat_view.isVisible() else self.login_view
         if hasattr(view, 'set_status'):
             view.set_status(f"Error : {err_message}", "red")
@@ -79,18 +110,21 @@ class AppController(QObject):
     @Slot(dict)
     def handle_network_message(self, payload: dict):
         """
-        Handles all the incoming payload from the server
+        Central handler for all messages received from the server.
+
+        This method parses the message payload and routes it to the appropriate
+        handler based on its status and content.
+
+        Args:
+            payload: The dictionary containing the message data from the server.
         """
         status = payload.get("status")
         message = payload.get("message")
 
-        if self.current_state in ("login", "register", "register_keys"):
-            view = self.login_view
-        else:
-            view = self.chat_view
+        view = self.login_view if self.current_state in ("login", "register", "register_keys") else self.chat_view
 
         if status == "ok":
-            if message == "success":  # Login OK
+            if message == "success":
                 self.current_state = "chat"
                 self.on_login_success()
             elif message == "Registration Successful":
@@ -100,178 +134,182 @@ class AppController(QObject):
             elif message == "keys_ok":
                 view.set_status("Keys published! You can log in.", "green")
                 self.current_state = "login"
-
         elif status == "error":
             view.set_status(f"Error: {message}", "red")
-
-        elif status == "new_friend_request":
-            if self.chat_view:
-                from_user = message.get("from")
+        elif status == "new_friend_request" and self.chat_view:
+            self.chat_view.add_friend_request_notification(message.get("from"))
+        elif status == "friend_request_status" and self.chat_view:
+            self.chat_view.show_friend_request_status(message)
+        elif status == "friend_request_accepted" and self.chat_view:
+            new_friend = message.get("friend_username")
+            if new_friend:
+                self.chat_view.add_contact(new_friend)
+                self.crypt_services.save_contacts_to_disk()
+                self.request_bundle_for_partner(new_friend)
+        elif status == "pending_friend_requests" and self.chat_view:
+            for from_user in message:
                 self.chat_view.add_friend_request_notification(from_user)
+        elif status == "Encrypted" and self.chat_view:
+            self.handle_encrypted_message(message)
+        elif status == "User_Select" and self.chat_view:
+            self.handle_user_select_response(message)
+        elif status == "key_bundle_ok" and self.chat_view:
+            self.handle_key_bundle_response(message)
+        elif status == "key_bundle_fail" and self.chat_view:
+            self.handle_key_bundle_failure(message)
 
-        elif status == "friend_request_status":
-            if self.chat_view:
-                self.chat_view.show_friend_request_status(message)
-        
-        elif status == "friend_request_accepted":
-            if self.chat_view:
-                new_friend = message.get("friend_username")
-                if new_friend:
-                    self.chat_view.add_contact(new_friend)
-                    self.crypt_services.save_contacts_to_disk()
-                    # Proactively fetch the new friend's key bundle
-                    self.request_bundle_for_partner(new_friend)
+    def handle_encrypted_message(self, message: dict):
+        """
+        Handles an incoming encrypted message.
 
+        Args:
+            message: The message dictionary containing sender and payload.
+        """
+        sender = message.get("sender_user_id")
+        if sender != self.username:
+            encrypted_payload = message.get("text")
+            decryption_result = self.crypt_services.decrypt_message(sender, encrypted_payload)
+            if decryption_result == "NEEDS_BUNDLE":
+                self.pending_messages[sender] = encrypted_payload
+                self.request_bundle_for_partner(sender)
+            elif decryption_result is not None:
+                self.crypt_services.db.add_message(sender, sender, decryption_result)
+                if self.chat_view.current_partner == sender:
+                    self.chat_view.add_message(sender, decryption_result)
 
-        elif status == "pending_friend_requests":
-            if self.chat_view:
-                for from_user in message:
-                    self.chat_view.add_friend_request_notification(from_user)
+    def handle_user_select_response(self, message: str):
+        """
+        Handles the response from a 'User_Select' request.
 
-        elif status == "Encrypted":
-            if self.chat_view:
-                sender = message.get("sender_user_id")
-                if sender != self.username:
-                    encrypted_payload = message.get("text")
-                    
-                    decryption_result = self.crypt_services.decrypt_message(sender, encrypted_payload)
+        Args:
+            message: The status message from the server.
+        """
+        if message in ("User Available", "User Available And Friends"):
+            self.chat_view.set_status("User is available, fetching keys...", "blue")
+            self.request_bundle_for_partner(self.chat_view.current_partner)
+        elif message in ("User Not Online", "User Not Online but Friends"):
+            self.chat_view.set_status("User is offline. They will receive the message upon login.", "orange")
+            self.request_bundle_for_partner(self.chat_view.current_partner)
+        elif message == "User Not Available":
+            self.chat_view.set_status("User not available", "red")
+            self.chat_view.set_input_enabled(False)
+        elif message == "User Not Friend":
+            self.chat_view.set_status("You can only chat with friends.", "red")
+            self.chat_view.set_input_enabled(False)
 
-                    if decryption_result == "NEEDS_BUNDLE":
-                        # Cache the message and request the bundle
-                        self.pending_messages[sender] = encrypted_payload
-                        self.request_bundle_for_partner(sender)
-                    elif decryption_result is not None:
-                        self.crypt_services.db.add_message(sender, sender, decryption_result)
-                        if self.chat_view.current_partner == sender:
-                            self.chat_view.add_message(sender, decryption_result)
+    def handle_key_bundle_response(self, message: dict):
+        """
+        Handles a successful key bundle response from the server.
 
+        Args:
+            message: The dictionary containing the key bundle.
+        """
+        partner_username = message.get("user_id")
+        if partner_username and self.crypt_services and partner_username != self.username:
+            self.crypt_services.store_partner_bundle(partner_username, message)
+            if self.chat_view.current_partner == partner_username:
+                self.chat_view.set_status(f"Ready to chat with {partner_username}", "green")
+                self.chat_view.set_input_enabled(True)
+                if partner_username in self.pending_messages:
+                    self.network.loop.call_soon_threadsafe(self.process_pending_message, partner_username)
 
-            else:
-                print("Received chat message but no chat view is active.")
+    def handle_key_bundle_failure(self, message: str):
+        """
+        Handles a failed key bundle request.
 
-        elif status == "User_Select":
-            if message in ("User Available", "User Available And Friends"):
-                if self.chat_view:
-                    self.chat_view.set_status("User is available, fetching keys...", "blue")
-                    self.request_bundle_for_partner(self.chat_view.current_partner)
+        Args:
+            message: The reason for the failure.
+        """
+        if message == "not_friends":
+            self.chat_view.set_status("Cannot start a secure session. You are not friends with this user.", "red")
+        else:
+            self.chat_view.set_status("Selected partner cannot be contacted", "red")
+        self.chat_view.set_input_enabled(False)
 
-            elif message in ("User Not Online", "User Not Online but Friends"):
-                if self.chat_view:
-                    self.chat_view.set_status("User is offline. They will receive the message upon login.", "orange")
-                    self.request_bundle_for_partner(self.chat_view.current_partner)
-
-            elif message == "User Not Available":
-                if self.chat_view:
-                    self.chat_view.set_status("User not available", "red")
-                    self.chat_view.set_input_enabled(False)
-            
-            elif message == "User Not Friend":
-                if self.chat_view:
-                    self.chat_view.set_status("You can only chat with friends.", "red")
-                    self.chat_view.set_input_enabled(False)
-
-
-        elif status == "key_bundle_ok":
-            partner_username = message.get("user_id")
-            if partner_username and self.crypt_services and partner_username != self.username:
-                self.crypt_services.store_partner_bundle(partner_username, message)
-
-                if self.chat_view and self.chat_view.current_partner == partner_username:
-                    self.chat_view.set_status(f"Ready to chat with {partner_username}", "green")
-                    self.chat_view.set_input_enabled(True)
-                
-                    # If there's a pending message, schedule it for processing
-                    if partner_username in self.pending_messages:
-                        # FIX: Use self.network.loop instead of asyncio directly
-                        self.network.loop.call_soon_threadsafe(self.process_pending_message, partner_username)
-
-
-        elif status == "key_bundle_fail":
-            if self.chat_view:
-                if message == "not_friends":
-                    self.chat_view.set_status("Cannot start a secure session. You are not friends with this user.", "red")
-                else:
-                    self.chat_view.set_status("Selected partner cannot be contacted", "red")
-                self.chat_view.set_input_enabled(False)
-
-
-
-    # Slots for GUI Signals
     @Slot(str, str)
     def handle_login_request(self, username: str, password: str):
+        """
+        Handles a login request from the LoginWindow.
+
+        Args:
+            username: The username entered by the user.
+            password: The password entered by the user.
+        """
         self.username = username
         self.login_view.set_status("Loading keys...", "blue")
         self.crypt_services = CryptServices(username)
-
         if not self.crypt_services.load_keys_from_disk(password):
             self.login_view.set_status("Invalid credentials", "red")
             self.current_state = "login"
             return
-
         self.login_view.set_status("Logging in...", "blue")
         self.current_state = "login"
-
-        login_payload = {
-            "command": "login",
-            "credentials": {"username": username, "password": password}
-        }
+        login_payload = {"command": "login", "credentials": {"username": username, "password": password}}
         self.network.send_payload(json.dumps(login_payload))
 
     @Slot(str, str)
     def handle_register_request(self, username: str, password: str):
+        """
+        Handles a registration request from the LoginWindow.
+
+        Args:
+            username: The username entered by the user.
+            password: The password entered by the user.
+        """
         self.login_view.set_status("Generating Keys...", "blue")
         self.network.schedule_task(self.async_register(username, password))
 
     @Slot(str)
     def handle_friend_request(self, friend_username: str):
-        payload = {
-            "command": "friend_request",
-            "from_user": self.username,
-            "to_user": friend_username
-        }
+        """
+        Handles a friend request from the ChatWindow.
+
+        Args:
+            friend_username: The username of the user to send a friend request to.
+        """
+        payload = {"command": "friend_request", "from_user": self.username, "to_user": friend_username}
         self.network.send_payload(json.dumps(payload))
 
     @Slot(str)
     def handle_friend_request_accepted(self, from_user: str):
-        payload = {
-            "command": "accept_friend_request",
-            "from_user": from_user,
-            "to_user": self.username
-        }
+        """
+        Handles the acceptance of a friend request from the ChatWindow.
+
+        Args:
+            from_user: The username of the user whose friend request is accepted.
+        """
+        payload = {"command": "accept_friend_request", "from_user": from_user, "to_user": self.username}
         self.network.send_payload(json.dumps(payload))
 
     async def async_register(self, username: str, password: str):
+        """
+        Asynchronously handles the registration process, including key generation.
+
+        Args:
+            username: The username for the new account.
+            password: The password for the new account.
+        """
         self.username = username
         self.crypt_services = CryptServices(username)
-
         try:
-            self.public_bundle = await asyncio.to_thread(
-                self.crypt_services.generate_and_save_key, password
-            )
+            self.public_bundle = await asyncio.to_thread(self.crypt_services.generate_and_save_key, password)
             if self.public_bundle is None:
                 self.login_view.set_status("Username already exists on this device.", "red")
                 return
-
             self.login_view.set_status("Registering...", "blue")
             self.current_state = "register"
-            register_payload = {
-                "command": "register",
-                "credentials": {"username": username, "password": password}
-            }
+            register_payload = {"command": "register", "credentials": {"username": username, "password": password}}
             self.network.send_payload(json.dumps(register_payload))
-
         except Exception as e:
             self.login_view.set_status(f"Error in register_request: {str(e)}", "red")
 
     async def handle_publish_keys(self):
         """
-        Called by handle_network_message after registration succesful
+        Publishes the user's public key bundle to the server after successful
+        registration.
         """
         if self.public_bundle:
-            payload = {
-                "command": "publish_keys",
-                "bundle": self.public_bundle
-            }
+            payload = {"command": "publish_keys", "bundle": self.public_bundle}
             self.network.send_payload(json.dumps(payload))
             self.public_bundle = None
         else:
@@ -280,62 +318,57 @@ class AppController(QObject):
     @Slot(str, str)
     def handle_send_message(self, partner: str, text: str):
         """
-        Encrypts and sends a message. The check here is for the partner bundle,
-        as the session for the initiator is created lazily inside encrypt_message.
+        Handles the request to send a message from the ChatWindow.
+
+        Args:
+            partner: The username of the recipient.
+            text: The plaintext message to send.
         """
         if partner not in self.crypt_services.partner_bundles:
             self.chat_view.set_status(f"Cannot send message. No key bundle for {partner}. Please re-select them.", "red")
             return
-
         encrypted_payload = self.crypt_services.encrypt_message(partner, text)
-        
         self.crypt_services.db.add_message(partner, self.username, text)
-
         server_payload = {
             "status": "Encrypted",
-            "message": {
-                "text": encrypted_payload,
-                "sender_user_id": self.username,
-                "recv_user_id": partner
-            }
+            "message": {"text": encrypted_payload, "sender_user_id": self.username, "recv_user_id": partner}
         }
         self.network.send_payload(json.dumps(server_payload))
 
     @Slot(str)
     def handle_partner_select(self, partner: str):
         """
-        Called when user selects a partner in the chat window.
-        Checks for an existing session before requesting a new bundle.
+        Handles the selection of a chat partner in the ChatWindow.
+
+        Args:
+            partner: The username of the selected partner.
         """
         if self.chat_view:
             history = self.crypt_services.db.get_messages(partner)
             self.chat_view.load_chat_history(history)
-
-        # Always check user availability and fetch the latest bundle.
-        # This ensures we have the bundle in memory even if a session was loaded from disk,
-        # and also confirms if the user is online.
-        # The server will provide a one-time-pre-key if needed for a new session,
-        # or we can just use the bundle to re-validate an existing one.
-        payload = {
-            "status": "User_Select",
-            "user_id": partner
-        }
+        payload = {"status": "User_Select", "user_id": partner}
         self.network.send_payload(json.dumps(payload))
         if self.chat_view:
-            # Give immediate feedback while we wait for the network response
             self.chat_view.set_status(f"Checking availability of {partner}...", "blue")
             self.chat_view.set_input_enabled(False)
 
     def request_bundle_for_partner(self, partner_sname: str):
-        """Requests a key bundle for a specific partner."""
-        bundle_request_payload = {
-            "status": "request_key_bundle",
-            "user_id": partner_sname
-        }
+        """
+        Requests a key bundle for a specific partner from the server.
+
+        Args:
+            partner_sname: The username of the partner.
+        """
+        bundle_request_payload = {"status": "request_key_bundle", "user_id": partner_sname}
         self.network.send_payload(json.dumps(bundle_request_payload))
 
     def process_pending_message(self, partner_name: str):
-        """Processes a cached message after a bundle has been received."""
+        """
+        Processes a cached message after a key bundle has been received.
+
+        Args:
+            partner_name: The username of the partner whose message is pending.
+        """
         encrypted_payload = self.pending_messages.pop(partner_name, None)
         if encrypted_payload:
             decryption_result = self.crypt_services.decrypt_message(partner_name, encrypted_payload)
@@ -346,38 +379,32 @@ class AppController(QObject):
             else:
                 print(f"Error: Decryption failed for pending message from {partner_name}.")
 
-
-    # Internal Logic
     def on_login_success(self):
         """
-        Swaps the login window with the chat window and checks for pending friend requests.
+        Handles the successful login by switching to the chat view and
+        performing post-login tasks.
         """
-        # Save contacts before closing login view
         if self.crypt_services:
             self.crypt_services.save_contacts_to_disk()
-
         self.chat_view = ChatWindow(self.username)
         self.connect_chat_signals()
-        self.load_contact_list() # Load contacts into the new chat view
+        self.load_contact_list()
         self.chat_view.show()
         self.login_view.close()
-
-        # Check for pending friend requests
         self.check_pending_friend_requests()
 
     def check_pending_friend_requests(self):
         """
-        Sends a request to the server to get pending friend requests.
+        Sends a request to the server to get any pending friend requests for the
+        current user.
         """
-        payload = {
-            "command": "get_pending_friend_requests"
-        }
+        payload = {"command": "get_pending_friend_requests"}
         self.network.send_payload(json.dumps(payload))
-
 
     def load_contact_list(self):
         """
-        Loads the contact list of the current logged in user
+        Loads the user's contact list from the local database and populates
+        the chat view.
         """
         if self.chat_view and self.crypt_services:
             contacts = self.crypt_services.load_contacts_from_disk()
@@ -388,7 +415,8 @@ class AppController(QObject):
     @Slot()
     def shutdown(self):
         """
-        Gracefully shuts down the network service when the app is closing.
+        Gracefully shuts down the network service when the application is
+        closing.
         """
         print("AppController: Initiating shutdown...")
         if self.network:
