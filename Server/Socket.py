@@ -3,7 +3,7 @@ import json
 import base64
 import websockets
 from typing import Optional, Callable
-from NewServerCode import caching
+from Server import caching
 from database import StorageManager
 
 
@@ -47,7 +47,7 @@ class Server:
     ensuring the main WebSocket server remains responsive.
     """
     def __init__(self, websocket,
-                 caching: caching.caching,
+                 cache: caching.caching,
                  loop: asyncio.AbstractEventLoop,
                  storage_manager: StorageManager.StorageManager):
         """
@@ -55,14 +55,14 @@ class Server:
 
         Args:
             websocket: The WebSocket connection object for the client.
-            caching: An instance of the caching class for managing active users
+            cache: An instance of the caching class for managing active users
                      and message caching.
             loop: The asyncio event loop used for scheduling asynchronous tasks.
             storage_manager: An instance of the StorageManager for database
                              interactions.
         """
         self.websocket = websocket
-        self.caching = caching
+        self.caching = cache
         self.loop = loop
         self.StorageManager = storage_manager
         self.command_queue = asyncio.Queue()
@@ -179,7 +179,7 @@ class Server:
             self.kill_signal = True
             self.finished.set()
 
-    def _queue_external_command(self, payload: dict):
+    def queue_external_command(self, payload: dict):
         """
         Thread-safe helper to queue a command from an external thread.
 
@@ -314,7 +314,7 @@ class Server:
                         command_payload = {'method': 'send_text', 'args': notification_dict}
 
                         if hasattr(target_socket_handler, '_queue_external_command'):
-                            target_socket_handler._queue_external_command(command_payload)
+                            target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_status", "failed")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
@@ -374,7 +374,7 @@ class Server:
                         command_payload = {'method': 'send_text', 'args': notification_dict}
 
                         if hasattr(target_socket_handler, '_queue_external_command'):
-                            target_socket_handler._queue_external_command(command_payload)
+                            target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_accepted_status", "failed")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)

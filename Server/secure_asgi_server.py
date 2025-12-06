@@ -1,8 +1,6 @@
 import asyncio
 import os
 import ssl
-import sys
-import threading
 from typing import Callable, Awaitable, Dict, Any
 
 from Server import Authenticator
@@ -81,7 +79,7 @@ class Server:
         if user_id:
             loop = asyncio.get_running_loop()
             socket_handler = Socket.Server(websocket=websocket,
-                                           caching=self.caching,
+                                           cache=self.caching,
                                            loop=loop,
                                            storage_manager=self.StorageManager)
             self.caching.update_active_user_handler(websocket, socket_handler)
