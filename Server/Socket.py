@@ -1,85 +1,133 @@
-import queue
 import asyncio
-from queue import Queue
+import json
 import base64
 import websockets
-import threading
-import time
 from typing import Optional, Callable
 from NewServerCode import caching
-import json
 from database import StorageManager
 
 
 def b64_encode(data: Optional[bytes]) -> Optional[str]:
     """
     Safely base64-encodes a bytes object into a string, handling None.
+
+    Args:
+        data: The bytes object to encode.
+
+    Returns:
+        The base64-encoded string, or None if the input was None.
     """
     if data is None: return None
     return base64.b64encode(data).decode("utf-8")
 
+
 def to_bytes(data) -> Optional[bytes]:
     """
     Safely converts memoryview or bytes to bytes, handling None.
+
+    Args:
+        data: The memoryview or bytes object to convert.
+
+    Returns:
+        The converted bytes object, or None if the input was None.
     """
     if data is None: return None
     return bytes(data)
 
+
 class Server:
+    """
+    Manages a WebSocket connection for a single client, handling asynchronous
+    communication and command processing for a secure chat application.
+
+    This class is responsible for listening for incoming messages, processing
+    commands, and interacting with other parts of the server infrastructure
+    like caching and database storage. It uses an asynchronous, queue-based
+    approach to handle long-running or blocking operations in separate threads,
+    ensuring the main WebSocket server remains responsive.
+    """
     def __init__(self, websocket,
                  caching: caching.caching,
                  loop: asyncio.AbstractEventLoop,
                  storage_manager: StorageManager.StorageManager):
+        """
+        Initializes a new Server instance for a client connection.
+
+        Args:
+            websocket: The WebSocket connection object for the client.
+            caching: An instance of the caching class for managing active users
+                     and message caching.
+            loop: The asyncio event loop used for scheduling asynchronous tasks.
+            storage_manager: An instance of the StorageManager for database
+                             interactions.
+        """
         self.websocket = websocket
         self.caching = caching
         self.loop = loop
         self.StorageManager = storage_manager
-        self.command_queue = queue.Queue()
-        self.associated_threads = None
+        self.command_queue = asyncio.Queue()
         self.kill_signal = False
-        self.receiver = None # The user on other end of the conversation
-        self.user_id = None # The user id of the current user
-        self.finished = asyncio.Event() # Event to signal thread completion
+        self.receiver = None
+        self.user_id = None
+        self.finished = asyncio.Event()
 
         if self.caching is None:
             raise ValueError("Caching object is not initialized")
 
-    def _process_command(self) -> None:
+    async def _process_command(self) -> None:
         """
-        Processes command payload, which allows other methods to run the internal methods of this class.
-        :return: None
+        Asynchronous consumer that processes commands from the command queue.
+
+        This method continuously waits for commands to be added to the queue
+        and offloads their execution to a separate thread to prevent blocking
+        the main asyncio event loop.
         """
         while not self.kill_signal:
             try:
-                command_payload = self.command_queue.get(timeout=1)
-                method_name = command_payload.get("method")
-                args = command_payload.get("args")
-
-                if method_name:
-                    target_method: Optional[Callable] = getattr(self, method_name, None)
-                    if target_method and callable(target_method):
-                        if args is not None:
-                            target_method(args)
-                        else:
-                            target_method()
-                    else:
-                        continue
+                command_payload = await self.command_queue.get()
+                await asyncio.to_thread(self._execute_sync_command, command_payload)
                 self.command_queue.task_done()
-            except queue.Empty:
-                continue
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 print(f"Error in _process_command: {e}")
-                pass
 
-    def start(self) -> None:
+    def _execute_sync_command(self, command_payload: dict):
         """
-        Initiates the client communication interface. This is the main method for the thread.
+        Executes a command synchronously in a separate thread.
+
+        Args:
+            command_payload: A dictionary containing the 'method' to be called
+                             and its 'args'.
+        """
+        method_name = command_payload.get("method")
+        args = command_payload.get("args")
+
+        if method_name:
+            target_method: Optional[Callable] = getattr(self, method_name, None)
+            if target_method and callable(target_method):
+                if args is not None:
+                    target_method(args)
+                else:
+                    target_method()
+
+    async def start(self) -> None:
+        """
+        Initiates the client communication interface.
+
+        This is the main entry point for the socket handler. It retrieves the
+        user ID, starts the message listener and command processor tasks, and
+        waits for the connection to be closed.
         """
         try:
             user_info = self.caching.get_active_user_info(self.websocket)
             if user_info:
                 self.user_id = user_info[0]
-                self.processing()
+                listener_task = asyncio.create_task(self.listen())
+                processor_task = asyncio.create_task(self._process_command())
+                await self.finished.wait()
+                listener_task.cancel()
+                processor_task.cancel()
             else:
                 raise KeyError("User not found in ACTIVEUSERS immediately after start.")
         except Exception as e:
@@ -87,73 +135,66 @@ class Server:
         finally:
             print(f"Socket instance for {self.user_id or self.websocket.remote_address} is shutting down.")
             self.kill_signal = True
-            # Signal the main event loop that this thread's work is done.
-            self.loop.call_soon_threadsafe(self.finished.set)
+            self.finished.set()
 
-
-    def processing(self) -> None:
+    async def listen(self) -> None:
         """
-        Initiates the further communication process with the client.
-        """
-        listener_thread = threading.Thread(target=self.listen, name=f"Listener_{self.user_id}")
-        processor_thread = threading.Thread(target=self._process_command, name=f"Processor_{self.user_id}")
+        Listens for incoming messages from the WebSocket connection.
 
-        listener_thread.start()
-        processor_thread.start()
-
-        listener_thread.join()
-        processor_thread.join()
-
-    def listen(self) -> None:
-        """
-        Listens to the client and processes the received messages.
+        This method runs in a loop, processing messages as they arrive. It
+        deserializes the JSON payload and puts the corresponding command into
+        the command queue for processing.
         """
         try:
-            while not self.kill_signal:
-                future = asyncio.run_coroutine_threadsafe(self.websocket.recv(), self.loop)
-                payload = future.result()
-                payload = json.loads(payload)
+            async for payload_str in self.websocket:
+                try:
+                    payload = json.loads(payload_str)
+                    cmd = payload.get("command")
+                    status = payload.get("status")
+                    command_payload = None
 
-                if payload.get("command") == "friend_request":
-                    command_payload = {'method': 'handle_friend_request', 'args': payload}
-                    self.command_queue.put(command_payload)
-                
-                elif payload.get("command") == "get_pending_friend_requests":
-                    command_payload = {'method': 'handle_get_pending_friend_requests', 'args': None}
-                    self.command_queue.put(command_payload)
+                    if cmd == "friend_request":
+                        command_payload = {'method': 'handle_friend_request', 'args': payload}
+                    elif cmd == "get_pending_friend_requests":
+                        command_payload = {'method': 'handle_get_pending_friend_requests', 'args': None}
+                    elif cmd == "accept_friend_request":
+                        command_payload = {'method': 'handle_accept_friend_request', 'args': payload}
+                    elif status == "Encrypted":
+                        command_payload = {'method': 'recv_text', 'args': payload}
+                    elif status == "User_Select":
+                        command_payload = {'method': 'select_user', 'args': payload}
+                    elif status == "request_key_bundle":
+                        command_payload = {'method': 'handle_key_bundle_request', 'args': payload}
 
-                elif payload.get("command") == "accept_friend_request":
-                    command_payload = {'method': 'handle_accept_friend_request', 'args': payload}
-                    self.command_queue.put(command_payload)
-
-                elif payload.get("status") == "Encrypted":
-                    command_payload = {'method': 'recv_text', 'args': payload}
-                    self.command_queue.put(command_payload)
-
-                elif payload.get("status") == "User_Select":
-                    command_payload = {'method': 'select_user', 'args': payload}
-                    self.command_queue.put(command_payload)
-
-                elif payload.get("status") == "request_key_bundle":
-                    command_payload = {'method': 'handle_key_bundle_request', 'args': payload}
-                    self.command_queue.put(command_payload)
-
-        except (websockets.exceptions.ConnectionClosed,
-                websockets.exceptions.ConnectionClosedError,
-                websockets.exceptions.ConnectionClosedOK,
-                ConnectionError):
+                    if command_payload:
+                        self.command_queue.put_nowait(command_payload)
+                except json.JSONDecodeError:
+                    print(f"Invalid JSON from {self.user_id}")
+                    continue
+        except (websockets.exceptions.ConnectionClosed, ConnectionError):
             print(f"Client {self.user_id} disconnected.")
         except Exception as e:
-            print(f"Unexpected error in listen thread for {self.user_id}: {e}")
+            print(f"Unexpected error in listen for {self.user_id}: {e}")
         finally:
             self.kill_signal = True
+            self.finished.set()
 
+    def _queue_external_command(self, payload: dict):
+        """
+        Thread-safe helper to queue a command from an external thread.
+
+        Args:
+            payload: The command payload to add to the queue.
+        """
+        self.loop.call_soon_threadsafe(self.command_queue.put_nowait, payload)
 
     def recv_text(self, recv_payload: dict):
         """
-        Processes the received text from the current client
-         and redirects to the correct user
-        :param recv_payload:
+        Processes a received text message and forwards it to the recipient.
+
+        Args:
+            recv_payload: The payload containing the message, sender, and
+                          recipient information.
         """
         message = recv_payload.get("message").get("text")
         recv_id = recv_payload.get("message").get("recv_user_id")
@@ -168,62 +209,63 @@ class Server:
 
     def send_text(self, msg_payload: dict):
         """
-        Send the text to the client
-        :param msg_payload: A dictionary representing the message payload.
+        Sends a text message payload to the connected client.
+
+        Args:
+            msg_payload: The JSON payload to send to the client.
         """
         try:
-            # Ensure the dictionary is converted to a JSON string before sending.
             asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(msg_payload)), self.loop)
         except Exception as e:
             print(f"Error in socket.send_text: {e}")
-            pass
-
 
     def select_user(self, user_payload: dict):
         """
-        Processes the selected user from the client, checks friendship status,
-        and triggers retrieval of cached messages.
+        Handles a user selection event from the client.
+
+        This method checks if the selected user is a friend and is online,
+        and then initiates the retrieval of any cached messages.
+
+        Args:
+            user_payload: The payload containing the user_id of the selected
+                          partner.
         """
         partner_id = user_payload.get("user_id")
         try:
-            # First, check if the user even exists in the database
             if not self.caching.check_credentials(partner_id):
                 payload = self.caching.payload("User_Select", 'User Not Available')
                 asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
                 return
 
-            # Now check if the existing user is a friend
             if self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
                 if self.caching.get_active_user_websocket(partner_id):
                     payload = self.caching.payload("User_Select", 'User Available And Friends')
                     self.receiver = partner_id
                 else:
                     payload = self.caching.payload("User_Select", 'User Not Online but Friends')
-                
+
                 asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
-                
-                # After notifying the client, retrieve cached messages for this specific chat
                 print(f"User {self.user_id} selected {partner_id}. Retrieving cached messages.")
                 self.caching.retrieve_cached_messages(self.user_id, partner_id)
             else:
                 payload = self.caching.payload('User_Select', 'User Not Friend')
                 asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
-            
-            return
-
         except Exception as e:
             print(f"Error in select_user: {e}")
 
     def handle_key_bundle_request(self, payload: dict):
         """
-        Fetches and sends the key bundle to the client, but only if the users are friends.
+        Handles a request for a partner's key bundle.
+
+        Args:
+            payload: The payload containing the user_id of the partner whose
+                     key bundle is requested.
         """
         partner_id = payload.get("user_id")
         if not partner_id or not self.user_id:
             return
 
         try:
-            # Security Check: Ensure the two users are friends before proceeding
             if not self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
                 fail_payload = self.caching.payload("key_bundle_fail", "not_friends")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(fail_payload), self.loop)
@@ -242,10 +284,12 @@ class Server:
             error_payload = self.caching.payload("key_bundle_fail", "server_error")
             asyncio.run_coroutine_threadsafe(self.websocket.send(error_payload), self.loop)
 
-
     def handle_friend_request(self, payload: dict):
         """
-        Handles a friend request from a user.
+        Handles an incoming friend request from a user.
+
+        Args:
+            payload: The payload containing the 'from_user' and 'to_user' IDs.
         """
         from_user = payload.get("from_user")
         to_user = payload.get("to_user")
@@ -260,16 +304,17 @@ class Server:
                 response = self.caching.payload("friend_request_status", "sent")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
 
-                # If the target user is online, notify them of the new request
                 target_websocket = self.caching.get_active_user_websocket(to_user)
                 if target_websocket:
                     target_user_info = self.caching.get_active_user_info(target_websocket)
-                    if target_user_info and target_user_info[1]: # target_user_info[1] is the socket_handler
+                    if target_user_info and target_user_info[1]:
                         target_socket_handler = target_user_info[1]
                         notification = self.caching.payload("new_friend_request", {"from": from_user})
                         notification_dict = json.loads(notification)
                         command_payload = {'method': 'send_text', 'args': notification_dict}
-                        target_socket_handler.command_queue.put(command_payload)
+
+                        if hasattr(target_socket_handler, '_queue_external_command'):
+                            target_socket_handler._queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_status", "failed")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
@@ -281,7 +326,10 @@ class Server:
 
     def handle_get_pending_friend_requests(self, payload: dict = None):
         """
-        Fetches and sends pending friend requests to the client.
+        Fetches and sends a list of pending friend requests to the client.
+
+        Args:
+            payload: This argument is not used but is kept for consistency.
         """
         if not self.user_id:
             return
@@ -295,10 +343,13 @@ class Server:
 
     def handle_accept_friend_request(self, payload: dict):
         """
-        Handles accepting a friend request and notifies both users.
+        Handles the acceptance of a friend request and notifies both users.
+
+        Args:
+            payload: The payload containing the 'from_user' and 'to_user' IDs.
         """
-        from_user = payload.get("from_user") # The original sender of the request
-        to_user = payload.get("to_user")     # The user who is accepting the request (self.user_id)
+        from_user = payload.get("from_user")
+        to_user = payload.get("to_user")
 
         if not from_user or not to_user or to_user != self.user_id:
             return
@@ -307,26 +358,24 @@ class Server:
             success = self.StorageManager.AcceptFriendRequest(from_user, to_user)
 
             if success:
-                # --- Notify both users that they are now friends ---
-
-                # 1. Notify the accepting user (current client)
                 response_to_acceptor = self.caching.payload("friend_request_accepted", {"friend_username": from_user})
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response_to_acceptor), self.loop)
 
-                # 2. Notify the original sender
                 target_websocket = self.caching.get_active_user_websocket(from_user)
                 if target_websocket:
                     target_user_info = self.caching.get_active_user_info(target_websocket)
                     if target_user_info and target_user_info[1]:
                         target_socket_handler = target_user_info[1]
-                        
-                        notification_to_sender = self.caching.payload("friend_request_accepted", {"friend_username": to_user})
+
+                        notification_to_sender = self.caching.payload("friend_request_accepted",
+                                                                      {"friend_username": to_user})
                         notification_dict = json.loads(notification_to_sender)
-                        
+
                         command_payload = {'method': 'send_text', 'args': notification_dict}
-                        target_socket_handler.command_queue.put(command_payload)
+
+                        if hasattr(target_socket_handler, '_queue_external_command'):
+                            target_socket_handler._queue_external_command(command_payload)
             else:
-                # Notify the accepting user of failure
                 response = self.caching.payload("friend_request_accepted_status", "failed")
                 asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
 

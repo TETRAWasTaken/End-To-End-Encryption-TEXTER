@@ -5,18 +5,30 @@ from typing import Any, Coroutine
 import websockets
 import json
 import asyncio
-from NewServerCode import caching
+from Server import caching
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from database import StorageManager
 
 class AuthenticatorAndKeyHandler:
+    """
+    Handles user authentication and cryptographic key management for the secure
+    chat server.
+
+    This class is responsible for processing login and registration requests,
+    verifying user credentials using the Argon2 password hashing algorithm,
+    and storing and retrieving user key bundles from the database. It acts as
+    the gatekeeper for client connections, ensuring that only authenticated
+    users can proceed to the main application.
+    """
     def __init__(self, caching: caching.caching,
                  storage_manager: StorageManager.StorageManager) -> None:
         """
         Initializes the authenticator.
-        :param caching: The cache management system instance
-        :param storage_manager: The key storage instance
+
+        Args:
+            caching: The cache management system instance.
+            storage_manager: The key storage instance.
         """
         self.caching = caching
         self.StorageManager = storage_manager
@@ -24,8 +36,19 @@ class AuthenticatorAndKeyHandler:
 
     async def handle_authentication(self, websocket) -> str | None:
         """
-        Handle the authentication of the client.
-        Returns the user_id on successful authentication, otherwise None.
+        Handles the authentication process for a new client connection.
+
+        This method listens for 'login' or 'register' commands from the client,
+        verifies credentials, handles registration including key publishing,
+        and adds the user to the active user cache upon successful
+        authentication.
+
+        Args:
+            websocket: The WebSocket connection object for the client.
+
+        Returns:
+            The user_id of the authenticated user, or None if authentication
+            fails or the connection is closed.
         """
         authenticated_and_handled = False
         tries=0
@@ -45,23 +68,19 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
                     
-                    # 1. Fetch the stored hash from the database
-                    stored_hash = self.StorageManager.GetUserPasswordHash(user) # You will need to implement this method
+                    stored_hash = self.StorageManager.GetUserPasswordHash(user)
 
                     if not stored_hash:
-                        await websocket.send(self.caching.payload("error", "Credfail")) # User not found
+                        await websocket.send(self.caching.payload("error", "Credfail"))
                         continue
 
-                    # 2. Verify the password against the hash
                     try:
                         self.ph.verify(stored_hash, passw)
-                        # If verify() succeeds, the password is correct.
                         await websocket.send(self.caching.payload("ok", "success"))
                         authenticated_and_handled = True
                         self.caching.add_active_user(websocket, user, None)
-                        return user  # Return user_id on success
+                        return user
                     except VerifyMismatchError:
-                        # This is the expected error for a wrong password.
                         await websocket.send(self.caching.payload("error", "Credfail"))
                         continue
 
@@ -74,15 +93,12 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
 
-                    # Check if user already exists
-                    if self.StorageManager.UserExists(user): # You will need to implement this method
+                    if self.StorageManager.UserExists(user):
                         await websocket.send(self.caching.payload("error", "AAE"))
                         continue
                     else:
-                        # 1. Hash the new password
                         hashed_password = self.ph.hash(passw)
-                        # 2. Store the user and the HASHED password
-                        if self.StorageManager.InsertUser(user, hashed_password): # You will need to implement this method
+                        if self.StorageManager.InsertUser(user, hashed_password):
                             await websocket.send(self.caching.payload("ok", "Registration Successful"))
 
                             response_payload = await websocket.recv()
@@ -113,5 +129,4 @@ class AuthenticatorAndKeyHandler:
             print(f"Error in connection_handler for {websocket.remote_address}: {e}")
         finally:
             if not authenticated_and_handled or tries>=5:
-                # This block now only runs on exceptions or graceful client disconnect
                 return None

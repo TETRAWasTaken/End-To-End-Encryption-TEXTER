@@ -7,6 +7,12 @@ def initialize_database():
     """
     Connects to the Azure PostgreSQL database using environment variables
     and runs the x3dh_init.sql script ONLY if the database is empty.
+
+    This script is designed to be run as a pre-start step in a deployment
+    environment like Azure. It checks for the existence of a key table to
+    determine if the database has already been set up. If not, it executes
+    the schema definition script to create all necessary tables. This prevents
+    accidental data loss on subsequent deployments.
     """
     
     # 1. Load Configuration from Environment Variables (Azure App Settings)
