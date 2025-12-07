@@ -4,6 +4,7 @@ import datetime
 import psycopg2
 import json
 import threading
+import secrets
 
 from database import DB_connect
 
@@ -28,6 +29,11 @@ class caching:
         self.db = db
         self.ACTIVEUSERS = {}  # { websocket : [ user_id , socket_handler ]}
         self._active_users_lock = threading.Lock()
+
+        self.ACTIVE_SESSIONS = {}
+        self._active_session_lock = {}
+
+        self.TOKEN_LIFESPAN = datetime.timedelta(days=7)
 
     @staticmethod
     def payload(status: str, message):
@@ -65,6 +71,40 @@ class caching:
             "sender_user_id": sender_user_id
         }
         return self.payload("Encrypted", text_payload)
+
+    def create_session_token(self, user_id: str) -> str:
+        """
+        Generates a secure token for the user
+        """
+        token = secrets.token_hex(32)
+        timestamp = datetime.datetime.now()
+
+        with self._active_session_lock:
+            self.ACTIVE_SESSIONS[token] = (user_id, timestamp)
+        return token
+
+    def validate_session_token(self, token: str) -> str | None:
+        """
+        Returns user_id if token is valid, else None
+        """
+        with self._active_session_lock:
+            if token in self.ACTIVE_SESSIONS:
+                user_id, creation_time = self.ACTIVE_SESSIONS[token]
+
+                if datetime.datetime.now() - creation_time < self.TOKEN_LIFESPAN:
+                    del self.ACTIVE_SESSIONS[token]
+                    return None
+
+                return user_id
+            return None
+
+    def romove_session_token(self, token: str):
+        """
+        Removes the session token from existence
+        """
+        with self._active_session_lock:
+            if token in self.ACTIVE_SESSIONS:
+                del self.ACTIVE_SESSIONS[token]
 
     def add_active_user(self, websocket, user_id: str, socket_handler=None):
         """
@@ -271,7 +311,7 @@ class caching:
                     message_dict = json.loads(self.message_payload(sender_id, receiver_id, text))
                     command_payload = {'method': 'send_text', 'args': message_dict}
 
-                    if hasattr(socket_handler, '_queue_external_command'):
+                    if hasattr(socket_handler, 'queue_external_command'):
                         socket_handler.queue_external_command(command_payload)
                     else:
                         socket_handler.command_queue.put(command_payload)

@@ -76,12 +76,33 @@ class AuthenticatorAndKeyHandler:
 
                     try:
                         self.ph.verify(stored_hash, passw)
-                        await websocket.send(self.caching.payload("ok", "success"))
+                        session_token = self.caching.create_session_token(user)
+                        payload = {
+                            "text": "success",
+                            "session_token": session_token
+                        }
+                        await websocket.send(self.caching.payload("ok", payload))
                         authenticated_and_handled = True
                         self.caching.add_active_user(websocket, user, None)
                         return user
                     except VerifyMismatchError:
                         await websocket.send(self.caching.payload("error", "Credfail"))
+                        continue
+
+                elif command == "token_login":
+                    token = payload.get("token")
+                    user = self.caching.validate_session_token(token)
+
+                    if user:
+                        await websocket.send(self.caching.payload("ok", {
+                            "text": "success",
+                            "session_token": token
+                        }))
+                        authenticated_and_handled = True
+                        self.caching.add_active_user(websocket, user, None)
+                        return user
+                    else:
+                        await websocket.send(self.caching.payload("error", "Invalid or Expired Session Token"))
                         continue
 
                 elif command == "register":

@@ -17,6 +17,7 @@ class ChatWindow(QMainWindow):
     partner_selected = Signal(str)
     friend_request_sent = Signal(str)
     friend_request_accepted = Signal(str)
+    logout_requested = Signal()
 
     def __init__(self, username: str):
         """
@@ -28,7 +29,6 @@ class ChatWindow(QMainWindow):
         super().__init__()
         self.username = username
         self.current_partner = None
-
         self.setWindowTitle(f"TEXTER - {username}")
         self.setGeometry(100, 100, 800, 600)
 
@@ -72,6 +72,19 @@ class ChatWindow(QMainWindow):
         contact_layout.addLayout(partner_input_layout)
         contact_layout.addWidget(self.contact_list)
 
+        self.logout_btn = QPushButton("Logout")
+        self.logout_btn.setStyleSheet("""
+            QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border-radius: 5px;
+                    padding: 8px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { background-color: #c82333; }
+            """)
+        self.logout_btn.clicked.connect(self.logout_requested.emit)
+
         chat_panel = QWidget()
         chat_layout = QVBoxLayout(chat_panel)
         chat_layout.addWidget(self.status_label)
@@ -80,6 +93,7 @@ class ChatWindow(QMainWindow):
         input_layout.addWidget(self.message_input, 1)
         input_layout.addWidget(self.send_btn)
         chat_layout.addLayout(input_layout)
+        chat_layout.addWidget(self.logout_btn)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(contact_panel)

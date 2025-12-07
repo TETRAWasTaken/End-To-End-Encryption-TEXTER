@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +20,7 @@ class NetworkService(QObject):
     """
     connected = Signal()
     disconnected = Signal()
+    reconnecting = Signal()
     message_received = Signal(dict)
     error_occured = Signal(str)
 
@@ -30,6 +32,7 @@ class NetworkService(QObject):
             host_uri: The URI of the WebSocket server.
         """
         super().__init__()
+        self._should_reconnect = None
         self.websocket = None
         self.host_uri = 'wss://' + host_uri
         self._create_ssl_context()
@@ -38,6 +41,23 @@ class NetworkService(QObject):
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._shutdown_event = threading.Event()
         self._loop_started = threading.Event()
+
+        self._saved_username = None
+        self._saved_password = None
+        self._session_token = None
+
+    def set_credentials(self, username: str, password: str):
+        """
+        Stores the username and password of the user temporarily in memory
+        """
+        self._saved_username = username
+        self._saved_password = password
+
+    def set_session_token(self, token: str):
+        """
+        is Called when the login response contains a Token
+        """
+        self._session_token = token
 
     def start(self):
         """Starts the background network thread."""
@@ -132,15 +152,55 @@ class NetworkService(QObject):
         text_payload = {"recv_user_id": receiver_user_id, "text": text, "sender_user_id": sender_user_id}
         return self.payload("Encrypted", text_payload)
 
-    async def _connect(self):
+    async def _connection_manager(self):
         """Asynchronously connects to the WebSocket server."""
-        try:
-            self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context, open_timeout=10)
-            self.connected.emit()
-            self.schedule_task(self.listen())
-        except (websockets.exceptions.WebSocketException, OSError, asyncio.TimeoutError) as e:
-            self.error_occured.emit(f"Connection failed: {e.__class__.__name__} - {e}")
+        self._should_reconnect = True
+        while self._should_reconnect:
+            try:
+                self.websocket = await websockets.connect(self.host_uri,
+                                                          ssl=self.ssl_context,
+                                                          open_timeout=10,
+                                                          ping_interval=20,
+                                                          ping_timeout=20)
+                self.connected.emit()
+
+                if self._session_token:
+                    self.error_occured.emit("Auto-ReAuthenticating using session token...")
+                    token_paylaod = {
+                        "command": "token_login",
+                        "token": self._session_token
+                    }
+                    await self.websocket.send(json.dumps(token_paylaod))
+
+                elif self._saved_username and self._saved_password:
+                    self.error_occured.emit("Auto-ReAuthenticating using credentials...")
+                    login_payload = {
+                        "command": "login",
+                        "credentials": {
+                            "username": self._saved_username,
+                            "password": self._saved_password
+                        }
+                    }
+                    await self.websocket.send(json.dumps(login_payload))
+
+                await self.listen()
+
+            except (websockets.exceptions.WebSocketException, OSError, asyncio.TimeoutError) as e:
+                self.error_occured.emit(f"Connection failed: {e.__class__.__name__} - {e}")
+                self.disconnected.emit()
+
+            if self.websocket:
+                try:
+                    await self.websocket.close()
+                except:
+                    pass
+                self.websocket = None
+
             self.disconnected.emit()
+
+            if self._should_reconnect:
+                self.reconnecting.emit()
+                await asyncio.sleep(5)
 
     async def listen(self):
         """Listens for incoming messages from the server."""
@@ -190,10 +250,26 @@ class NetworkService(QObject):
             except websockets.exceptions.ConnectionClosed as e:
                 self.error_occured.emit(f"Error in _send_raw : {str(e)}")
 
+    async def _stop_connection(self):
+        """
+        Stops the reconnection loop
+        """
+        self._should_reconnect = False
+
+        if self.websocket:
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                self.error_occured.emit(f"Error in _stop_connection : {str(e)}")
+            finally:
+                self.websocket = None
+
+        self.disconnected.emit()
+
     @Slot()
     def connect(self):
         """Public slot to schedule the connection to the server."""
-        self.schedule_task(self._connect())
+        self.schedule_task(self._connection_manager())
 
     @Slot(str)
     def send_payload(self, payload: str):
@@ -222,5 +298,26 @@ class NetworkService(QObject):
             self.schedule_task(self._disconnect())
             self.loop.call_soon_threadsafe(self._shutdown_event.set)
             self._thread.join(timeout=5)
-            if self.isAlive():
-                print("Warning: Network thread did not shut down gracefully.")
+
+    def logout(self):
+        """
+        Send the logout command, clears local tokens, and stops the connection loop
+        """
+        self._should_reconnect = False
+
+        if self.websocket and self._session_token:
+            try:
+                logout_payload = {
+                    "command": "logout",
+                    "token": self._session_token
+                }
+                self.schedule_task(self._send_payload(json.dumps(logout_payload)))
+
+            except Exception as e:
+                self.error_occured.emit(f"Error in logout : {str(e)}")
+
+        self._saved_username = None
+        self._saved_password = None
+        self._session_token = None
+
+        self.schedule_task(self._stop_connection())
