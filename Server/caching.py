@@ -33,6 +33,8 @@ class caching:
         self.ACTIVE_SESSIONS = {}
         self._active_session_lock = {}
 
+        self.TOKEN_LIFESPAN = datetime.timedelta(days=7)
+
     @staticmethod
     def payload(status: str, message):
         """
@@ -75,8 +77,10 @@ class caching:
         Generates a secure token for the user
         """
         token = secrets.token_hex(32)
+        timestamp = datetime.datetime.now()
+
         with self._active_session_lock:
-            self.ACTIVE_SESSIONS[user_id] = token
+            self.ACTIVE_SESSIONS[token] = (user_id, timestamp)
         return token
 
     def validate_session_token(self, token: str) -> str | None:
@@ -84,7 +88,15 @@ class caching:
         Returns user_id if token is valid, else None
         """
         with self._active_session_lock:
-            return self.ACTIVE_SESSIONS.get(token)
+            if token in self.ACTIVE_SESSIONS:
+                user_id, creation_time = self.ACTIVE_SESSIONS[token]
+
+                if datetime.datetime.now() - creation_time < self.TOKEN_LIFESPAN:
+                    del self.ACTIVE_SESSIONS[token]
+                    return None
+
+                return user_id
+            return None
 
     def romove_session_token(self, token: str):
         """

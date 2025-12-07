@@ -32,6 +32,7 @@ class NetworkService(QObject):
             host_uri: The URI of the WebSocket server.
         """
         super().__init__()
+        self._should_reconnect = None
         self.websocket = None
         self.host_uri = 'wss://' + host_uri
         self._create_ssl_context()
@@ -249,6 +250,22 @@ class NetworkService(QObject):
             except websockets.exceptions.ConnectionClosed as e:
                 self.error_occured.emit(f"Error in _send_raw : {str(e)}")
 
+    async def _stop_connection(self):
+        """
+        Stops the reconnection loop
+        """
+        self._should_reconnect = False
+
+        if self.websocket:
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                self.error_occured.emit(f"Error in _stop_connection : {str(e)}")
+            finally:
+                self.websocket = None
+
+        self.disconnected.emit()
+
     @Slot()
     def connect(self):
         """Public slot to schedule the connection to the server."""
@@ -281,3 +298,26 @@ class NetworkService(QObject):
             self.schedule_task(self._disconnect())
             self.loop.call_soon_threadsafe(self._shutdown_event.set)
             self._thread.join(timeout=5)
+
+    def logout(self):
+        """
+        Send the logout command, clears local tokens, and stops the connection loop
+        """
+        self._should_reconnect = False
+
+        if self.websocket and self._session_token:
+            try:
+                logout_payload = {
+                    "command": "logout",
+                    "token": self._session_token
+                }
+                self.schedule_task(self._send_payload(json.dumps(logout_payload)))
+
+            except Exception as e:
+                self.error_occured.emit(f"Error in logout : {str(e)}")
+
+        self._saved_username = None
+        self._saved_password = None
+        self._session_token = None
+
+        self.schedule_task(self._stop_connection())

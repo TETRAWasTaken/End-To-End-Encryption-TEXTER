@@ -74,6 +74,25 @@ class AppController(QObject):
             self.chat_view.partner_selected.connect(self.handle_partner_select)
             self.chat_view.friend_request_sent.connect(self.handle_friend_request)
             self.chat_view.friend_request_accepted.connect(self.handle_friend_request_accepted)
+            self.chat_view.logout_requested.connect(self.handle_logout_request)
+
+    @Slot()
+    def handle_logout_request(self):
+        """
+        Handles the user clicking the logout button
+        """
+        if self.network:
+            self.network.logout()
+
+        if self.chat_view:
+            self.chat_view.close()
+            self.chat_view = None
+
+        self.username = None
+        self.current_state = "Login"
+
+        self.login_view.show()
+        self.login_view.set_status("Logged out successfully", "green")
 
     @Slot()
     def on_network_reconnecting(self):
