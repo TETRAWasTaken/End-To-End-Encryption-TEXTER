@@ -31,7 +31,7 @@ class caching:
         self._active_users_lock = threading.Lock()
 
         self.ACTIVE_SESSIONS = {}
-        self._active_session_lock = {}
+        self._active_session_lock = threading.Lock()
 
         self.TOKEN_LIFESPAN = datetime.timedelta(days=7)
 
@@ -91,14 +91,14 @@ class caching:
             if token in self.ACTIVE_SESSIONS:
                 user_id, creation_time = self.ACTIVE_SESSIONS[token]
 
-                if datetime.datetime.now() - creation_time < self.TOKEN_LIFESPAN:
+                if datetime.datetime.now() - creation_time > self.TOKEN_LIFESPAN:
                     del self.ACTIVE_SESSIONS[token]
                     return None
 
                 return user_id
             return None
 
-    def romove_session_token(self, token: str):
+    def remove_session_token(self, token: str):
         """
         Removes the session token from existence
         """

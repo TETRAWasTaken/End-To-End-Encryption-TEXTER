@@ -88,7 +88,7 @@ class AuthenticatorAndKeyHandler:
                     except VerifyMismatchError:
                         await websocket.send(self.caching.payload("error", "Credfail"))
                         continue
-
+                
                 elif command == "token_login":
                     token = payload.get("token")
                     user = self.caching.validate_session_token(token)
