@@ -89,17 +89,12 @@ End-To-End Encryption TEXTER is a messaging application that prioritizes user pr
    - Cryptographic services (X3DH, Double Ratchet)
    - Local key management
 
-2. **Server** (`NewServerCode/` directory)
+2. **Server** (`Server/` directory)
    - ASGI-compatible server (runs with uvicorn)
    - WebSocket-based communication
    - User authentication and management
    - PostgreSQL database for user data
    - Message routing (does not decrypt messages)
-
-3. **Database**
-   - PostgreSQL for persistent storage
-   - Stores user credentials and public keys
-   - Does not store message content (E2EE)
 
 ### Cryptographic Protocols
 
@@ -224,7 +219,7 @@ If deploying to a cloud platform, SSL is typically handled by the load balancer.
 
 1. **Database Connection**: Update database credentials in `database/DB_connect.py` (if needed)
 
-2. **Host and Port**: By default, the server binds to `::1` (IPv6 localhost). For external access, modify the host in `NewServerCode/secure_asgi_server.py`
+2. **Host and Port**: By default, the server binds to `::1` (IPv6 localhost). For external access, modify the host in `Server/secure_asgi_server.py`
 
 3. **Find Your Public IPv6 Address**:
    ```bash
@@ -264,10 +259,10 @@ When you run the client, you'll need to provide:
 3. **Run the server**:
    ```bash
    # Using uvicorn (recommended)
-   uvicorn NewServerCode.secure_asgi_server:app --host :: --port 8000
+   uvicorn Server.secure_asgi_server:app --host :: --port 8000
    
    # Or if using the included script
-   python -m NewServerCode.secure_asgi_server
+   python -m Server.secure_asgi_server
    ```
 
 4. **Verify server is running**:

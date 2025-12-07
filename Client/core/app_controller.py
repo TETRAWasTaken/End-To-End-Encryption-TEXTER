@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtCore import QObject, Slot, Signal
+from PySide6.QtCore import QObject, Slot, Signal, QTimer
 import asyncio
 from Client.gui.login_window import LoginWindow
 from Client.gui.chat_window import ChatWindow
@@ -16,6 +16,8 @@ class AppController(QObject):
     the application's state, handles user input, and processes messages
     received from the server.
     """
+    login_successful = Signal()
+
     def __init__(self):
         """
         Initializes the AppController, setting up the initial state, services,
@@ -27,6 +29,9 @@ class AppController(QObject):
         self.current_state = "Login"
         self.public_bundle = None
         self.pending_messages = {}
+        self.login_timer = QTimer(self)
+        self.login_timer.setSingleShot(True)
+        self.login_timer.timeout.connect(self.handle_login_timeout)
 
         self.network = NetworkService()
         self.login_view = LoginWindow()
@@ -35,6 +40,7 @@ class AppController(QObject):
 
         self.connect_network_signals()
         self.connect_login_signals()
+        self.login_successful.connect(self.on_login_success)
 
     def run(self):
         """
@@ -112,7 +118,10 @@ class AppController(QObject):
         Slot that handles the successful connection to the server by enabling
         the login view buttons.
         """
-        self.login_view.enable_buttons()
+        if self.network.session_token:
+            self.network.send_payload(json.dumps({"command": "token_login", "token": self.network.session_token}))
+        else:
+            self.login_view.enable_buttons()
 
     @Slot()
     def on_network_disconnected(self):
@@ -157,13 +166,13 @@ class AppController(QObject):
 
         if status == "ok":
             if message == "success" or (isinstance(message, dict) and message.get("text") == "success"):
-
+                self.login_timer.stop()
                 if isinstance(message, dict) and "session_token" in message:
                     token = message["session_token"]
                     self.network.set_session_token(token)
 
                 self.current_state = "chat"
-                self.on_login_success()
+                self.login_successful.emit()
                 return
 
             elif message == "Registration Successful":
@@ -176,7 +185,10 @@ class AppController(QObject):
                 self.current_state = "login"
 
         elif status == "error":
+            self.login_timer.stop()
             view.set_status(f"Error: {message}", "red")
+            self.login_view.enable_buttons()
+
 
         elif status == "new_friend_request" and self.chat_view:
             self.chat_view.add_friend_request_notification(message.get("from"))
@@ -296,9 +308,19 @@ class AppController(QObject):
         self.network.set_credentials(username, password)
 
         self.login_view.set_status("Logging in...", "blue")
+        self.login_view.disable_buttons()
+        self.login_timer.start(15000)
         self.current_state = "login"
         login_payload = {"command": "login", "credentials": {"username": username, "password": password}}
         self.network.send_payload(json.dumps(login_payload))
+
+    @Slot()
+    def handle_login_timeout(self):
+        """
+        Handles the case where the login request times out.
+        """
+        self.login_view.set_status("Login timed out. Please try again.", "red")
+        self.login_view.enable_buttons()
 
     @Slot(str, str)
     def handle_register_request(self, username: str, password: str):
@@ -432,6 +454,7 @@ class AppController(QObject):
             else:
                 print(f"Error: Decryption failed for pending message from {partner_name}.")
 
+    @Slot()
     def on_login_success(self):
         """
         Handles the successful login by switching to the chat view and

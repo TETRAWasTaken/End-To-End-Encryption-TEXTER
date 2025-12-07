@@ -44,7 +44,7 @@ class NetworkService(QObject):
 
         self._saved_username = None
         self._saved_password = None
-        self._session_token = None
+        self.session_token = None
 
     def set_credentials(self, username: str, password: str):
         """
@@ -57,7 +57,7 @@ class NetworkService(QObject):
         """
         is Called when the login response contains a Token
         """
-        self._session_token = token
+        self.session_token = token
 
     def start(self):
         """Starts the background network thread."""
@@ -164,11 +164,11 @@ class NetworkService(QObject):
                                                           ping_timeout=20)
                 self.connected.emit()
 
-                if self._session_token:
+                if self.session_token:
                     self.error_occured.emit("Auto-ReAuthenticating using session token...")
                     token_paylaod = {
                         "command": "token_login",
-                        "token": self._session_token
+                        "token": self.session_token
                     }
                     await self.websocket.send(json.dumps(token_paylaod))
 
@@ -305,11 +305,11 @@ class NetworkService(QObject):
         """
         self._should_reconnect = False
 
-        if self.websocket and self._session_token:
+        if self.websocket and self.session_token:
             try:
                 logout_payload = {
                     "command": "logout",
-                    "token": self._session_token
+                    "token": self.session_token
                 }
                 self.schedule_task(self._send_payload(json.dumps(logout_payload)))
 
@@ -318,6 +318,6 @@ class NetworkService(QObject):
 
         self._saved_username = None
         self._saved_password = None
-        self._session_token = None
+        self.session_token = None
 
         self.schedule_task(self._stop_connection())
