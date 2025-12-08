@@ -14,20 +14,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Fix for "Buildozer is running as root" & "No module named distutils"
+      # Fix for "No module named distutils" in Python 3.12+
       - name: Create Build Script
         run: |
           echo '#!/bin/bash' > build_script.sh
-          # 1. Install setuptools to fix Python 3.12 distutils error
+          # Install setuptools to fix distutils error
           echo 'pip install --upgrade pip setuptools' >> build_script.sh
-          # 2. Pipe "yes" to bypass the root user warning prompt
-          echo 'yes | buildozer android debug' >> build_script.sh
+          # Run buildozer normally (env var handles the root check)
+          echo 'buildozer android debug' >> build_script.sh
           chmod +x build_script.sh
 
       # Run Buildozer in the official Docker container
       - name: Build APK with Docker
         run: |
           docker run --rm \
+            -e BUILDOZER_WARN_ON_ROOT=0 \
             -v ${{ github.workspace }}/TexterKivy:/home/user/hostcwd \
             -v ${{ github.workspace }}/build_script.sh:/home/user/build_script.sh \
             kivy/buildozer \
@@ -38,5 +39,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: texter-apk
-          # The APK is generated inside TexterKivy/bin/
           path: TexterKivy/bin/*.apk
