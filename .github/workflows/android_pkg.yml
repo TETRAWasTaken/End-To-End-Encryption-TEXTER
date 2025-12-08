@@ -1,6 +1,9 @@
 name: Build Android APK
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -11,16 +14,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # PATCH 1: Force Python 3.11
-      # This prevents the "No module named distutils" error caused by Python 3.12
+      # 1. Force Python 3.11 (Native support for distutils)
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # PATCH 2: Install System Dependencies manually
-      # This replaces the Docker container's pre-installed tools.
-      # We need these to compile Kivy and Cryptography.
+      # 2. Install System Dependencies (Added libffi-dev for Cryptography)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -42,32 +42,32 @@ jobs:
             gstreamer1.0-plugins-good \
             libssl-dev \
             libsqlite3-dev \
+            libffi-dev \
             openjdk-17-jdk \
             autoconf \
             libtool \
             pkg-config \
             zip \
-            unzip
+            unzip \
+            cmake
 
-      # PATCH 3: Install Buildozer & Cython in the user environment
-      # This ensures we have the correct versions compatible with your app.
+      # 3. Install Buildozer & Pinned Cython
       - name: Install Buildozer dependencies
         run: |
           pip install --upgrade pip
-          # Cython<3.0 is often more stable for current Kivy versions
-          pip install buildozer "cython<3.0" setuptools
+          # Cython 0.29.36 is required for Kivy 2.2.1 compilation
+          pip install buildozer "cython==0.29.36" setuptools
 
-      # PATCH 4: Run Buildozer Natively
-      # We run this directly in the shell. Since we are not root,
-      # Buildozer will NOT stop to ask "Are you sure?".
-      - name: Build with Buildozer
+      # 4. Run Buildozer (Native - No Docker, No Pipe)
+      - name: Build APK
         run: |
           cd KivyClient
-          # Ensure we accept licenses automatically
-          yes | buildozer android debug
+          # We use yes to accept SDK licenses just in case spec ignores it, 
+          # but we pipe it safely to a specific config command first if needed.
+          # For this run, we rely on the spec file 'android.accept_sdk_license = True'
+          buildozer android debug
 
-      # PATCH 5: Upload Artifacts
-      # This grabs the APK from the bin folder and saves it to GitHub.
+      # 5. Upload Artifacts
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
