@@ -1,6 +1,9 @@
 name: Build Android APK
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -11,13 +14,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Fix for "No module named distutils" in Python 3.12+
-      # We create a simple setup script to install setuptools inside the container
+      # Fix for "Buildozer is running as root" & "No module named distutils"
       - name: Create Build Script
         run: |
           echo '#!/bin/bash' > build_script.sh
+          # 1. Install setuptools to fix Python 3.12 distutils error
           echo 'pip install --upgrade pip setuptools' >> build_script.sh
-          echo 'buildozer android debug' >> build_script.sh
+          # 2. Pipe "yes" to bypass the root user warning prompt
+          echo 'yes | buildozer android debug' >> build_script.sh
           chmod +x build_script.sh
 
       # Run Buildozer in the official Docker container
@@ -34,5 +38,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: texter-apk
-          # The bin folder is inside your app folder
+          # The APK is generated inside TexterKivy/bin/
           path: TexterKivy/bin/*.apk
