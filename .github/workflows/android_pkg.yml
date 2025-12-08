@@ -62,7 +62,7 @@ jobs:
       # Buildozer will NOT stop to ask "Are you sure?".
       - name: Build with Buildozer
         run: |
-          cd TexterKivy
+          cd KivyClient
           # Ensure we accept licenses automatically
           yes | buildozer android debug
 
