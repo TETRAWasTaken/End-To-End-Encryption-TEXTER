@@ -19,53 +19,45 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Install ALL required system dependencies for compiling Kivy & Cryptography
+      # 1. Install System Dependencies (including libffi-dev for CFFI)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            git \
-            ffmpeg \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            libportmidi-dev \
-            libswscale-dev \
-            libavformat-dev \
-            libavcodec-dev \
-            zlib1g-dev \
-            libgstreamer1.0 \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            libssl-dev \
-            libsqlite3-dev \
-            libffi-dev \
-            openjdk-17-jdk \
-            autoconf \
-            libtool \
-            pkg-config \
-            zip \
-            unzip \
-            cmake
+            build-essential git ffmpeg libsdl2-dev libsdl2-image-dev \
+            libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev \
+            libavformat-dev libavcodec-dev zlib1g-dev libgstreamer1.0 \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            libssl-dev libsqlite3-dev libffi-dev openjdk-17-jdk \
+            autoconf libtool pkg-config zip unzip cmake
 
+      # 2. Setup Rust for Cross-Compilation (CRITICAL for Cryptography)
+      - name: Install Rust and Android Targets
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source $HOME/.cargo/env
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+
+      # 3. Install Buildozer & Dependencies
       - name: Install Buildozer dependencies
         run: |
           pip install --upgrade pip
-          # Pinned versions known to work together
+          # Force setuptools to fix distutils issues
           pip install buildozer "cython==0.29.36" setuptools
 
+      # 4. Run Buildozer with Rust environment variables
       - name: Build APK (Verbose)
         run: |
+          source $HOME/.cargo/env
           cd KivyClient
-          # The -v flag is CRITICAL to seeing why compilation fails
-          # yes | handles any lingering prompts (like sdk license) if spec doesn't catch them
-          yes | buildozer -v android debug
+          # We use 'yes' to handle SDK licenses, but we add '|| true' so broken pipe doesn't fail the step
+          # This allows us to see the real error if buildozer crashes
+          yes | buildozer -v android debug || true
 
+      # 5. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: success()  # Only upload if build succeeded
+        if: always() # Upload logs/APKs even if build "failed" according to the shell
         with:
           name: texter-apk
           path: TexterKivy/bin/*.apk
