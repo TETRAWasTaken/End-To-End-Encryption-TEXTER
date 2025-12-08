@@ -11,33 +11,63 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Creates a script to run inside the Docker container
-      - name: Create Build Script
-        run: |
-          echo '#!/bin/bash' > build_script.sh
-          
-          # 1. Force-Set the environment variable inside the script scope
-          echo 'export BUILDOZER_WARN_ON_ROOT=0' >> build_script.sh
-          
-          # 2. Install setuptools to fix "No module named distutils" (Python 3.12 issue)
-          echo 'pip install --upgrade pip setuptools' >> build_script.sh
-          
-          # 3. Run Buildozer with "yes" pipe as a backup failsafe
-          # This answers "y" to "Buildozer is running as root" AND "Accept License?"
-          echo 'yes | buildozer android debug' >> build_script.sh
-          
-          chmod +x build_script.sh
+      # PATCH 1: Force Python 3.11
+      # This prevents the "No module named distutils" error caused by Python 3.12
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      # Run the script inside the official Kivy Docker container
-      - name: Build APK with Docker
+      # PATCH 2: Install System Dependencies manually
+      # This replaces the Docker container's pre-installed tools.
+      # We need these to compile Kivy and Cryptography.
+      - name: Install System Dependencies
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/TexterKivy:/home/user/hostcwd \
-            -v ${{ github.workspace }}/build_script.sh:/home/user/build_script.sh \
-            kivy/buildozer \
-            /home/user/build_script.sh
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0 \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libssl-dev \
+            libsqlite3-dev \
+            openjdk-17-jdk \
+            autoconf \
+            libtool \
+            pkg-config \
+            zip \
+            unzip
 
-      # Upload the Artifact
+      # PATCH 3: Install Buildozer & Cython in the user environment
+      # This ensures we have the correct versions compatible with your app.
+      - name: Install Buildozer dependencies
+        run: |
+          pip install --upgrade pip
+          # Cython<3.0 is often more stable for current Kivy versions
+          pip install buildozer "cython<3.0" setuptools
+
+      # PATCH 4: Run Buildozer Natively
+      # We run this directly in the shell. Since we are not root,
+      # Buildozer will NOT stop to ask "Are you sure?".
+      - name: Build with Buildozer
+        run: |
+          cd TexterKivy
+          # Ensure we accept licenses automatically
+          yes | buildozer android debug
+
+      # PATCH 5: Upload Artifacts
+      # This grabs the APK from the bin folder and saves it to GitHub.
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
