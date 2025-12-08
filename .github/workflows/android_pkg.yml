@@ -1,31 +1,38 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:  # Allow manual trigger from Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Setup Buildozer Action
-      # This action automatically sets up the Android SDK/NDK and dependencies
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          # Point this to the folder containing your main.py and buildozer.spec
-          workdir: KivyClient
-          command: buildozer android debug
-          buildozer_version: stable
+      # Fix for "No module named distutils" in Python 3.12+
+      # We create a simple setup script to install setuptools inside the container
+      - name: Create Build Script
+        run: |
+          echo '#!/bin/bash' > build_script.sh
+          echo 'pip install --upgrade pip setuptools' >> build_script.sh
+          echo 'buildozer android debug' >> build_script.sh
+          chmod +x build_script.sh
 
-      # 2. Upload the APK as an artifact
-      # You can download this from the GitHub Actions summary page
+      # Run Buildozer in the official Docker container
+      - name: Build APK with Docker
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/TexterKivy:/home/user/hostcwd \
+            -v ${{ github.workspace }}/build_script.sh:/home/user/build_script.sh \
+            kivy/buildozer \
+            /home/user/build_script.sh
+
+      # Upload the Artifact
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: texter-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          # The bin folder is inside your app folder
+          path: TexterKivy/bin/*.apk

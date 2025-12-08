@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - Client
+      - MobileGUI
   workflow_dispatch:
 
 jobs:
