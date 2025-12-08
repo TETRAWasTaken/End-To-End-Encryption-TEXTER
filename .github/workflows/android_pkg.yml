@@ -1,9 +1,6 @@
 name: Build Android APK
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -14,21 +11,27 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Fix for "No module named distutils" in Python 3.12+
+      # Creates a script to run inside the Docker container
       - name: Create Build Script
         run: |
           echo '#!/bin/bash' > build_script.sh
-          # Install setuptools to fix distutils error
+          
+          # 1. Force-Set the environment variable inside the script scope
+          echo 'export BUILDOZER_WARN_ON_ROOT=0' >> build_script.sh
+          
+          # 2. Install setuptools to fix "No module named distutils" (Python 3.12 issue)
           echo 'pip install --upgrade pip setuptools' >> build_script.sh
-          # Run buildozer normally (env var handles the root check)
-          echo 'buildozer android debug' >> build_script.sh
+          
+          # 3. Run Buildozer with "yes" pipe as a backup failsafe
+          # This answers "y" to "Buildozer is running as root" AND "Accept License?"
+          echo 'yes | buildozer android debug' >> build_script.sh
+          
           chmod +x build_script.sh
 
-      # Run Buildozer in the official Docker container
+      # Run the script inside the official Kivy Docker container
       - name: Build APK with Docker
         run: |
           docker run --rm \
-            -e BUILDOZER_WARN_ON_ROOT=0 \
             -v ${{ github.workspace }}/TexterKivy:/home/user/hostcwd \
             -v ${{ github.workspace }}/build_script.sh:/home/user/build_script.sh \
             kivy/buildozer \
