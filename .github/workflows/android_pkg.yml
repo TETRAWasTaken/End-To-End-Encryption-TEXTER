@@ -1,9 +1,6 @@
 name: Build Android APK
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -14,50 +11,68 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 1. Force Python 3.11
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 1. Install System Dependencies (including libffi-dev for CFFI)
+      # 2. Install System Dependencies (Includes automake for libffi, cmake for build)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential git ffmpeg libsdl2-dev libsdl2-image-dev \
-            libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev \
-            libavformat-dev libavcodec-dev zlib1g-dev libgstreamer1.0 \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-            libssl-dev libsqlite3-dev libffi-dev openjdk-17-jdk \
-            autoconf libtool pkg-config zip unzip cmake
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0 \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libssl-dev \
+            libsqlite3-dev \
+            libffi-dev \
+            openjdk-17-jdk \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            zip \
+            unzip \
+            cmake
 
-      # 2. Setup Rust for Cross-Compilation (CRITICAL for Cryptography)
-      - name: Install Rust and Android Targets
+      # 3. Configure Rust for Android (Required for Cryptography)
+      # We add the architectures for ARM (modern phones) and ARMv7 (older phones)
+      - name: Configure Rust Targets
         run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
-          source $HOME/.cargo/env
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
-      # 3. Install Buildozer & Dependencies
+      # 4. Install Buildozer & Pinned Python Dependencies
       - name: Install Buildozer dependencies
         run: |
           pip install --upgrade pip
-          # Force setuptools to fix distutils issues
+          # Cython 0.29.36 is strictly required for Kivy 2.2.1
           pip install buildozer "cython==0.29.36" setuptools
 
-      # 4. Run Buildozer with Rust environment variables
-      - name: Build APK (Verbose)
+      # 5. Run Buildozer
+      # Using 'yes' to handle any SDK license prompts just in case
+      - name: Build APK
         run: |
-          source $HOME/.cargo/env
           cd KivyClient
-          # We use 'yes' to handle SDK licenses, but we add '|| true' so broken pipe doesn't fail the step
-          # This allows us to see the real error if buildozer crashes
-          yes | buildozer -v android debug || true
+          yes | buildozer -v android debug
 
-      # 5. Upload APK
+      # 6. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: always() # Upload logs/APKs even if build "failed" according to the shell
+        if: success()
         with:
           name: texter-apk
-          path: TexterKivy/bin/*.apk
+          path: KivyClient/bin/*.apk
