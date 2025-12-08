@@ -1,0 +1,31 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:  # Allow manual trigger from Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. Setup Buildozer Action
+      # This action automatically sets up the Android SDK/NDK and dependencies
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          # Point this to the folder containing your main.py and buildozer.spec
+          workdir: KivyClient
+          command: buildozer android debug
+          buildozer_version: stable
+
+      # 2. Upload the APK as an artifact
+      # You can download this from the GitHub Actions summary page
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: texter-apk
+          path: ${{ steps.buildozer.outputs.filename }}
