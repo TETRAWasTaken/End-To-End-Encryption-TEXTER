@@ -11,13 +11,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Force Python 3.11
+      # --- CRITICAL FIX: Free up disk space (~25GB) ---
+      # GitHub runners only have ~14GB free. Kivy+Rust needs more.
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      # -----------------------------------------------
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 2. Install System Dependencies (Includes automake for libffi, cmake for build)
+      # Install System Dependencies (Includes automake for libffi, cmake for build)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -49,27 +58,25 @@ jobs:
             unzip \
             cmake
 
-      # 3. Configure Rust for Android (Required for Cryptography)
-      # We add the architectures for ARM (modern phones) and ARMv7 (older phones)
+      # Configure Rust for Android (Required for Cryptography)
       - name: Configure Rust Targets
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
-      # 4. Install Buildozer & Pinned Python Dependencies
+      # Install Buildozer & Pinned Python Dependencies
       - name: Install Buildozer dependencies
         run: |
           pip install --upgrade pip
           # Cython 0.29.36 is strictly required for Kivy 2.2.1
           pip install buildozer "cython==0.29.36" setuptools
 
-      # 5. Run Buildozer
-      # Using 'yes' to handle any SDK license prompts just in case
+      # Run Buildozer
       - name: Build APK
         run: |
           cd KivyClient
           yes | buildozer -v android debug
 
-      # 6. Upload APK
+      # Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         if: success()
