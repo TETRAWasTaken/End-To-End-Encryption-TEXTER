@@ -2,6 +2,16 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      # We allow manual input overrides, similar to the snippet provided
+      python_version:
+        description: 'Python version'
+        required: true
+        default: '3.11'
+      buildozer_cmd:
+        description: 'Buildozer command'
+        required: true
+        default: 'buildozer -v android debug'
 
 jobs:
   build:
@@ -11,28 +21,49 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- CRITICAL FIX: Free up disk space (~25GB) ---
-      # GitHub runners only have ~14GB free. Kivy+Rust needs more.
+      # --- CRITICAL: Free Disk Space ---
+      # Essential for 'cryptography' compilation on GitHub Runners
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-      # -----------------------------------------------
 
-      - name: Set up Python 3.11
+      # --- Setup Python (Adapted from project needs) ---
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ inputs.python_version }}
+          architecture: x64
 
-      # Install System Dependencies (Includes automake for libffi, cmake for build)
+      # --- Setup Java (Adapted from your snippet) ---
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # --- Install System Dependencies (Merged list) ---
+      # Includes libraries from your snippet (ncurses) + project multimedia requirements
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             git \
+            zip \
+            unzip \
+            autoconf \
+            libtool \
+            pkg-config \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libtinfo5 \
             ffmpeg \
             libsdl2-dev \
             libsdl2-image-dev \
@@ -42,41 +73,28 @@ jobs:
             libswscale-dev \
             libavformat-dev \
             libavcodec-dev \
-            zlib1g-dev \
-            libgstreamer1.0 \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            libssl-dev \
-            libsqlite3-dev \
-            libffi-dev \
-            openjdk-17-jdk \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            zip \
-            unzip \
-            cmake
+            libsqlite3-dev
 
-      # Configure Rust for Android (Required for Cryptography)
+      # --- Configure Rust (Critical for Cryptography) ---
       - name: Configure Rust Targets
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
-      # Install Buildozer & Pinned Python Dependencies
-      - name: Install Buildozer dependencies
+      # --- Install Python Dependencies ---
+      - name: Install Buildozer & Dependencies
         run: |
           pip install --upgrade pip
-          # Cython 0.29.36 is strictly required for Kivy 2.2.1
-          pip install buildozer "cython==0.29.36" setuptools
+          # Using 0.29.36 as required by your project's Kivy 2.2.1
+          pip install "cython==0.29.36" buildozer setuptools
 
-      # Run Buildozer
+      # --- Build with Buildozer ---
       - name: Build APK
         run: |
           cd KivyClient
-          yes | buildozer -v android debug
+          # Using 'yes' to accept license agreements automatically
+          yes | ${{ inputs.buildozer_cmd }}
 
-      # Upload APK
+      # --- Upload Artifact ---
       - name: Upload APK
         uses: actions/upload-artifact@v4
         if: success()
