@@ -3,7 +3,6 @@ name: Build Android APK
 on:
   workflow_dispatch:
     inputs:
-      # We allow manual input overrides, similar to the snippet provided
       python_version:
         description: 'Python version'
         required: true
@@ -22,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
 
       # --- CRITICAL: Free Disk Space ---
-      # Essential for 'cryptography' compilation on GitHub Runners
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -30,22 +28,21 @@ jobs:
           sudo rm -rf /usr/local/share/boost
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      # --- Setup Python (Adapted from project needs) ---
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python_version }}
           architecture: x64
 
-      # --- Setup Java (Adapted from your snippet) ---
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- Install System Dependencies (Merged list) ---
-      # Includes libraries from your snippet (ncurses) + project multimedia requirements
+      # --- FIXED: Dependencies for Ubuntu 24.04 ---
+      # Removed: libtinfo5, libncurses5-dev, libncursesw5-dev
+      # Added: libncurses-dev (provides ncurses 6)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -61,8 +58,7 @@ jobs:
             libffi-dev \
             libssl-dev \
             zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
+            libncurses-dev \
             libtinfo5 \
             ffmpeg \
             libsdl2-dev \
@@ -75,23 +71,21 @@ jobs:
             libavcodec-dev \
             libsqlite3-dev
 
-      # --- Configure Rust (Critical for Cryptography) ---
+      # --- Configure Rust ---
       - name: Configure Rust Targets
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
-      # --- Install Python Dependencies ---
+      # --- Install Buildozer ---
       - name: Install Buildozer & Dependencies
         run: |
           pip install --upgrade pip
-          # Using 0.29.36 as required by your project's Kivy 2.2.1
           pip install "cython==0.29.36" buildozer setuptools
 
-      # --- Build with Buildozer ---
+      # --- Build APK ---
       - name: Build APK
         run: |
           cd KivyClient
-          # Using 'yes' to accept license agreements automatically
           yes | ${{ inputs.buildozer_cmd }}
 
       # --- Upload Artifact ---
