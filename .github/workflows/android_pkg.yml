@@ -89,4 +89,8 @@ jobs:
 
       # --- Upload Artifact ---
       - name: Upload APK
-        uses
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: texter-apk
+          path: KivyClient/bin/*.apk
