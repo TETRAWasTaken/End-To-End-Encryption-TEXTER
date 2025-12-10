@@ -20,7 +20,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- Free Disk Space (Critical for Cryptography build) ---
+      # --- CRITICAL: Free Disk Space ---
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -40,9 +40,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- Install System Dependencies ---
-      # FIX: Removed 'libtinfo5' which does not exist on Ubuntu 24.04
-      # Replaced older ncurses libraries with 'libncurses-dev'
+      # --- FIXED: Optimized Dependencies ---
+      # Removed: ffmpeg, libsdl2-*, gstreamer, libtinfo5 (unnecessary on host)
+      # Kept: build tools (automake, cmake, etc.) required for compiling recipes
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -59,15 +59,6 @@ jobs:
             libssl-dev \
             zlib1g-dev \
             libncurses-dev \
-            ffmpeg \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            libportmidi-dev \
-            libswscale-dev \
-            libavformat-dev \
-            libavcodec-dev \
             libsqlite3-dev
 
       # --- Configure Rust ---
