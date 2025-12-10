@@ -20,7 +20,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- CRITICAL: Free Disk Space ---
+      # --- Free Disk Space (Critical for Cryptography build) ---
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -40,9 +40,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # --- FIXED: Dependencies for Ubuntu 24.04 ---
-      # Removed: libtinfo5, libncurses5-dev, libncursesw5-dev
-      # Added: libncurses-dev (provides ncurses 6)
+      # --- Install System Dependencies ---
+      # FIX: Removed 'libtinfo5' which does not exist on Ubuntu 24.04
+      # Replaced older ncurses libraries with 'libncurses-dev'
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -59,7 +59,6 @@ jobs:
             libssl-dev \
             zlib1g-dev \
             libncurses-dev \
-            libtinfo5 \
             ffmpeg \
             libsdl2-dev \
             libsdl2-image-dev \
@@ -90,8 +89,4 @@ jobs:
 
       # --- Upload Artifact ---
       - name: Upload APK
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: texter-apk
-          path: KivyClient/bin/*.apk
+        uses
