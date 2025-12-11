@@ -65,7 +65,7 @@ class NetworkService(QObject):
             self._shutdown_event.clear()
             self._thread.start()
             if not self._loop_started.wait(timeout=5):
-                print("FATAL: Network service event loop failed to start.")
+                print("FATAL: Network services event loop failed to start.")
                 self.error_occured.emit("Network thread failed to start.")
 
     def _run_event_loop(self):
@@ -90,7 +90,7 @@ class NetworkService(QObject):
 
     def schedule_task(self, coro):
         """
-        Schedules a coroutine to run on the service's event loop.
+        Schedules a coroutine to run on the services's event loop.
 
         Args:
             coro: The coroutine to schedule.

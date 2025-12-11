@@ -1,31 +1,87 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: 'Python version'
+        required: true
+        default: '3.11'
+      buildozer_cmd:
+        description: 'Buildozer command'
+        required: true
+        default: 'buildozer -v android debug'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Setup Buildozer Action
-      # This action automatically sets up the Android SDK/NDK and dependencies
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          # Point this to the folder containing your main.py and buildozer.spec
-          workdir: KivyClient
-          command: buildozer android debug
-          buildozer_version: stable
+      # --- CRITICAL: Free Disk Space ---
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      # 2. Upload the APK as an artifact
-      # You can download this from the GitHub Actions summary page
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          architecture: x64
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # --- FIXED: Optimized Dependencies ---
+      # Removed: ffmpeg, libsdl2-*, gstreamer, libtinfo5 (unnecessary on host)
+      # Kept: build tools (automake, cmake, etc.) required for compiling recipes
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            zip \
+            unzip \
+            autoconf \
+            libtool \
+            pkg-config \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            zlib1g-dev \
+            libncurses-dev \
+            libsqlite3-dev
+
+      # --- Configure Rust ---
+      - name: Configure Rust Targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+
+      # --- Install Buildozer ---
+      - name: Install Buildozer & Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install "cython==0.29.36" buildozer setuptools
+
+      # --- Build APK ---
+      - name: Build APK
+        run: |
+          cd KivyClient
+          yes | ${{ inputs.buildozer_cmd }}
+
+      # --- Upload Artifact ---
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: texter-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: KivyClient/bin/*.apk

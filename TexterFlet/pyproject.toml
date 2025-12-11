@@ -1,0 +1,12 @@
+[tool.flet]
+product = "Texter E2EE"
+org = "com.tetra.texter"
+company = "Tetra"
+copyright = "Copyright (C) 2024"
+
+[tool.flet.app]
+path = "."
+
+[tool.flet.android]
+# Critical: Grant permissions for WebSockets and Database
+permissions = ["android.permission.INTERNET", "android.permission.WRITE_EXTERNAL_STORAGE"]

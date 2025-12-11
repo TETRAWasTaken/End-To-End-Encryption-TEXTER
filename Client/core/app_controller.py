@@ -12,7 +12,7 @@ class AppController(QObject):
     The main controller for the client application.
 
     This class orchestrates the interactions between the GUI (LoginWindow,
-    ChatWindow), the network service, and the cryptography service. It manages
+    ChatWindow), the network services, and the cryptography services. It manages
     the application's state, handles user input, and processes messages
     received from the server.
     """
@@ -142,7 +142,7 @@ class AppController(QObject):
         current view.
 
         Args:
-            err_message: The error message received from the network service.
+            err_message: The error message received from the network services.
         """
         view = self.chat_view if self.chat_view and self.chat_view.isVisible() else self.login_view
         if hasattr(view, 'set_status'):
@@ -497,7 +497,7 @@ class AppController(QObject):
     @Slot()
     def shutdown(self):
         """
-        Gracefully shuts down the network service when the application is
+        Gracefully shuts down the network services when the application is
         closing.
         """
         print("AppController: Initiating shutdown...")
