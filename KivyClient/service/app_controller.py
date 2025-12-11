@@ -33,7 +33,7 @@ class AppController(EventDispatcher):
         return App.get_running_app()
 
     def run(self):
-        """Starts the network service."""
+        """Starts the network services."""
         self.network.start()
         self.network.connect()
 

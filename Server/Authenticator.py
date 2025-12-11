@@ -136,6 +136,14 @@ class AuthenticatorAndKeyHandler:
                             await websocket.send(self.caching.payload("error", "Registration failed on server."))
                         continue
 
+                elif command == "check_user_existence":
+                    username = payload.get("username")
+                    exists = self.StorageManager.UserExists(username)
+                    if exists:
+                        await websocket.send(self.caching.payload("user_existence_status", "User_Exists"))
+                    else:
+                        await websocket.send(self.caching.payload("user_existence_status", "User_Not_Exists"))
+
                 else:
                     await websocket.send(self.caching.payload("error", "Unknown command"))
                     continue
