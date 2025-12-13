@@ -51,10 +51,10 @@ class AppController:
     def on_network_reconnecting(self):
         self.set_status("Reconnecting...", "info")
 
-    def on_network_error(self, instance, error):
+    def on_network_error(self, error):
         self.set_status(f"Net Error: {error}", "error")
 
-    def handle_network_message(self, instance, payload):
+    def handle_network_message(self, payload):
         try:
             status = payload.get("status")
             message = payload.get("message")
@@ -90,6 +90,8 @@ class AppController:
                     if self.crypt_services:
                         self.crypt_services.save_contacts_to_disk()
                     self.update_ui("ADD_CONTACT", friend_username)
+                    # NEW: Remove from pending sent list if accepted
+                    self.update_ui("REMOVE_SENT_REQUEST", friend_username)
                     self.request_bundle_for_partner(friend_username)
 
             elif status == "Encrypted":
@@ -265,6 +267,8 @@ class AppController:
 
     def send_friend_request(self, friend_username):
         if friend_username:
+            # NEW: Immediately show sent request in UI
+            self.update_ui("ADD_SENT_REQUEST", friend_username)
             self.network.send_payload(json.dumps({
                 "command": "friend_request",
                 "from_user": self.username,

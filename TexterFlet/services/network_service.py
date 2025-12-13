@@ -128,7 +128,7 @@ class NetworkService:
         try:
             async for message in self.websocket:
                 msg_json = json.loads(message)
-                self._dispatch('on_message_received', None, msg_json)
+                self._dispatch('on_message_received', msg_json)
         except Exception as e:
             if self._should_reconnect:
                 self._dispatch('on_error_occurred', None, f"Listen error: {e}")
