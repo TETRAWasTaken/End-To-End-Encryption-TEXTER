@@ -30,6 +30,14 @@ class NetworkService:
         self._saved_password = None
         self.session_token = None
 
+        # Manual flag to track connection state (avoids websockets version issues)
+        self._connected = False
+
+    @property
+    def is_connected(self):
+        """Check if the websocket is actively connected."""
+        return self._connected
+
     def set_credentials(self, username: str, password: str):
         """Stores credentials for auto-login on reconnect."""
         self._saved_username = username
@@ -92,6 +100,7 @@ class NetworkService:
         while self._should_reconnect:
             try:
                 self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context)
+                self._connected = True
                 self._dispatch('on_connected')
 
                 if self.session_token:
@@ -108,9 +117,12 @@ class NetworkService:
                 await self.listen()
 
             except Exception as e:
+                self._connected = False
                 self._dispatch('on_error_occurred', f"Connection failed: {e}")
                 self._dispatch('on_disconnected')
 
+            # Cleanup
+            self._connected = False
             if self.websocket:
                 try:
                     await self.websocket.close()
@@ -128,19 +140,29 @@ class NetworkService:
         try:
             async for message in self.websocket:
                 msg_json = json.loads(message)
-                self._dispatch('on_message_received', None, msg_json)
+                # FIXED: Removed 'None' argument
+                self._dispatch('on_message_received', msg_json)
         except Exception as e:
             if self._should_reconnect:
-                self._dispatch('on_error_occurred', None, f"Listen error: {e}")
+                # FIXED: Removed 'None' argument
+                self._dispatch('on_error_occurred', f"Listen error: {e}")
+        finally:
+            self._connected = False
 
     async def _send_payload(self, payload: str):
-        if self.websocket:
+        if self.websocket and self._connected:
             try:
                 await self.websocket.send(payload)
             except Exception as e:
-                self._dispatch('on_error_occurred', None, f"Send error: {e}")
+                # FIXED: Removed 'None' argument
+                self._dispatch('on_error_occurred', f"Send error: {e}")
+        else:
+            # FIXED: Removed 'None' argument
+            self._dispatch('on_error_occurred', "Cannot send: Not connected")
 
     def connect(self):
+        if self._should_reconnect:
+            return
         self.schedule_task(self._connection_manager())
 
     def send_payload(self, payload: str):
@@ -148,14 +170,13 @@ class NetworkService:
 
     def logout(self):
         self._should_reconnect = False
-        if self.websocket and self.session_token:
-            self.schedule_task(self._send_payload(json.dumps({
-                "command": "logout",
-                "token": self.session_token
-            })))
         self._saved_username = None
         self._saved_password = None
         self.session_token = None
+
+        if self.websocket:
+            self.schedule_task(self.websocket.close())
+        self._connected = False
 
     def shutdown(self):
         if self.loop and self._thread.is_alive():

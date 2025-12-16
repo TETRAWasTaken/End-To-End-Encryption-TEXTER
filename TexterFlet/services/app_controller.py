@@ -8,7 +8,9 @@ from services.crypt_services import CryptServices
 
 
 class AppController:
-    def __init__(self, page_update_callback, status_callback):
+    # 1. Update __init__ to accept 'page'
+    def __init__(self, page, page_update_callback, status_callback):
+        self.page = page  # Store page reference for client_storage
         self.update_ui = page_update_callback
         self.set_status = status_callback
 
@@ -26,6 +28,20 @@ class AppController:
         self.connect_network_signals()
 
     def run(self):
+        # 2. Check for saved token on startup
+        saved_token = self.page.client_storage.get("session_token")
+        saved_username = self.page.client_storage.get("username")
+
+        if saved_token and saved_username:
+            print(f"Found saved session for {saved_username}")
+            self.username = saved_username
+            self.network.set_session_token(saved_token)
+
+            # Initialize crypt services since we are skipping the password screen
+            self.crypt_services = CryptServices(saved_username)
+            # Note: You might need to handle loading keys securely here if they are password protected.
+            # For this example, we assume keys are accessible or handled by the token flow.
+
         self.network.start()
         self.network.connect()
 
@@ -37,7 +53,9 @@ class AppController:
         self.network.bind('on_reconnecting', self.on_network_reconnecting)
 
     def on_network_connected(self):
+        # If we loaded a token in run(), this will auto-login
         if self.network.session_token:
+            self.set_status(f"Resuming session as {self.username}...", "info")
             self.network.send_payload(json.dumps({
                 "command": "token_login",
                 "token": self.network.session_token
@@ -51,18 +69,25 @@ class AppController:
     def on_network_reconnecting(self):
         self.set_status("Reconnecting...", "info")
 
-    def on_network_error(self, instance, error):
+    def on_network_error(self, error):
         self.set_status(f"Net Error: {error}", "error")
 
-    def handle_network_message(self, instance, payload):
+    def handle_network_message(self, payload):
         try:
             status = payload.get("status")
             message = payload.get("message")
 
             if status == "ok":
                 if message == "success" or (isinstance(message, dict) and message.get("text") == "success"):
+                    # 3. Save token on successful login
                     if isinstance(message, dict) and "session_token" in message:
-                        self.network.set_session_token(message["session_token"])
+                        token = message["session_token"]
+                        self.network.set_session_token(token)
+
+                        # SAVE TO STORAGE
+                        self.page.client_storage.set("session_token", token)
+                        self.page.client_storage.set("username", self.username)
+
                     self.on_login_success()
 
                 elif message == "Registration Successful":
@@ -73,6 +98,10 @@ class AppController:
                     self.set_status("Keys published! You can log in.", "success")
 
             elif status == "error":
+                # If token is invalid (expired), clear storage and ask for login
+                if "Invalid token" in str(message):
+                    self.logout()
+
                 self.set_status(f"Server Error: {message}", "error")
                 self.update_ui("ENABLE_LOGIN")
 
@@ -90,6 +119,7 @@ class AppController:
                     if self.crypt_services:
                         self.crypt_services.save_contacts_to_disk()
                     self.update_ui("ADD_CONTACT", friend_username)
+                    self.update_ui("REMOVE_SENT_REQUEST", friend_username)
                     self.request_bundle_for_partner(friend_username)
 
             elif status == "Encrypted":
@@ -137,10 +167,14 @@ class AppController:
             self.network.set_credentials(username, password)
             self.set_status("Logging in...", "info")
 
-            self.network.send_payload(json.dumps({
-                "command": "login",
-                "credentials": {"username": username, "password": password}
-            }))
+            if self.network.is_connected:
+                self.network.send_payload(json.dumps({
+                    "command": "login",
+                    "credentials": {"username": username, "password": password}
+                }))
+            else:
+                self.network.connect()
+
         except Exception as e:
             self.set_status(f"Login failed: {str(e)}", "error")
 
@@ -265,6 +299,7 @@ class AppController:
 
     def send_friend_request(self, friend_username):
         if friend_username:
+            self.update_ui("ADD_SENT_REQUEST", friend_username)
             self.network.send_payload(json.dumps({
                 "command": "friend_request",
                 "from_user": self.username,
@@ -280,6 +315,10 @@ class AppController:
         self.update_ui("REMOVE_REQUEST", from_user)
 
     def logout(self):
+        # 4. Clear storage on logout
+        self.page.client_storage.remove("session_token")
+        self.page.client_storage.remove("username")
+
         self.network.logout()
         self.username = None
         self.current_partner = None
