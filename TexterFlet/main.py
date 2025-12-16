@@ -271,7 +271,7 @@ def main(page: ft.Page):
                 pass
 
     # --- Initialize Controller ---
-    controller = AppController(handle_ui_update, handle_status)
+    controller = AppController(page, handle_ui_update, handle_status)
 
     login_btn.on_click = lambda e: controller.handle_login_request(user_input.value, pass_input.value)
     register_btn.on_click = lambda e: controller.handle_register_request(user_input.value, pass_input.value)
