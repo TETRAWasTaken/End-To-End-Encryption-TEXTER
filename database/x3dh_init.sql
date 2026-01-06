@@ -1,10 +1,12 @@
 -- Drop existing tables in reverse order of creation to handle dependencies.
-DROP TABLE IF EXISTS text_cache;
-DROP TABLE IF EXISTS onetime_pre_key;
-DROP TABLE IF EXISTS signed_key;
-DROP TABLE IF EXISTS identity_key;
-DROP TABLE IF EXISTS User_Info;
-DROP TABLE IF  EXISTS friend_requests;
+DROP TABLE IF EXISTS text_cache CASCADE;
+DROP TABLE IF EXISTS onetime_pre_key CASCADE;
+DROP TABLE IF EXISTS signed_key CASCADE;
+DROP TABLE IF EXISTS identity_key CASCADE;
+DROP TABLE IF  EXISTS friend_requests CASCADE;
+DROP TABLE IF EXISTS User_Info CASCADE;
+DROP TABLE IF EXISTS friends CASCADE;
+DROP TYPE IF EXISTS status_type CASCADE;
 
 -- Table to store each registered user's username and a secure password hash.
 CREATE TABLE User_Info (
