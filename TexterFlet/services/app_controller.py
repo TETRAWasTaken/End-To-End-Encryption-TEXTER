@@ -8,9 +8,8 @@ from services.crypt_services import CryptServices
 
 
 class AppController:
-    # 1. Update __init__ to accept 'page'
     def __init__(self, page, page_update_callback, status_callback):
-        self.page = page  # Store page reference for client_storage
+        self.page = page
         self.update_ui = page_update_callback
         self.set_status = status_callback
 
@@ -28,7 +27,7 @@ class AppController:
         self.connect_network_signals()
 
     def run(self):
-        # 2. Check for saved token on startup
+        # Check for saved token on startup
         saved_token = self.page.client_storage.get("session_token")
         saved_username = self.page.client_storage.get("username")
 
@@ -39,8 +38,6 @@ class AppController:
 
             # Initialize crypt services since we are skipping the password screen
             self.crypt_services = CryptServices(saved_username)
-            # Note: You might need to handle loading keys securely here if they are password protected.
-            # For this example, we assume keys are accessible or handled by the token flow.
 
         self.network.start()
         self.network.connect()
@@ -53,7 +50,8 @@ class AppController:
         self.network.bind('on_reconnecting', self.on_network_reconnecting)
 
     def on_network_connected(self):
-        # If we loaded a token in run(), this will auto-login
+        # If we have a token (auto-login), use it.
+        # If NOT (logout state), enable the buttons.
         if self.network.session_token:
             self.set_status(f"Resuming session as {self.username}...", "info")
             self.network.send_payload(json.dumps({
@@ -79,12 +77,10 @@ class AppController:
 
             if status == "ok":
                 if message == "success" or (isinstance(message, dict) and message.get("text") == "success"):
-                    # 3. Save token on successful login
+                    # Save token on successful login
                     if isinstance(message, dict) and "session_token" in message:
                         token = message["session_token"]
                         self.network.set_session_token(token)
-
-                        # SAVE TO STORAGE
                         self.page.client_storage.set("session_token", token)
                         self.page.client_storage.set("username", self.username)
 
@@ -98,7 +94,6 @@ class AppController:
                     self.set_status("Keys published! You can log in.", "success")
 
             elif status == "error":
-                # If token is invalid (expired), clear storage and ask for login
                 if "Invalid token" in str(message):
                     self.logout()
 
@@ -315,11 +310,21 @@ class AppController:
         self.update_ui("REMOVE_REQUEST", from_user)
 
     def logout(self):
-        # 4. Clear storage on logout
+        # 1. Clear persistent storage
         self.page.client_storage.remove("session_token")
         self.page.client_storage.remove("username")
 
+        # 2. Logout from network (closes socket)
         self.network.logout()
+
+        # 3. Clear local state
         self.username = None
         self.current_partner = None
+        self.crypt_services = None
+
+        # 4. Switch to login screen
         self.update_ui("SWITCH_TO_LOGIN")
+
+        # 5. FIX: Immediately start a NEW connection so "on_connected" fires
+        # and enables the Login/Register buttons.
+        self.network.connect()
