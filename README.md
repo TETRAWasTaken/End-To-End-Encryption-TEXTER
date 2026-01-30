@@ -1,6 +1,6 @@
 # End-To-End Encryption TEXTER
 
-A secure, end-to-end encrypted messaging application built with Python, featuring modern cryptographic protocols for private communication.
+A secure, end-to-end encrypted messaging application built with Python, featuring modern cryptographic protocols for private communication. hello 
 
 ---
 
