@@ -38,9 +38,18 @@ class AppController:
 
             # Initialize crypt services since we are skipping the password screen
             self.crypt_services = CryptServices(saved_username)
+            self.crypt_services.load_database_without_password()
 
         self.network.start()
         self.network.connect()
+
+    def handle_lifecycle_change(self, state: str):
+        """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
+        print(f"App lifecycle changed: {state}")
+        if state == "resumed":
+            if not self.network.is_connected:
+                self.set_status("App resumed, reconnecting...", "info")
+                self.network.connect()
 
     def connect_network_signals(self):
         self.network.bind('on_connected', self.on_network_connected)
@@ -291,6 +300,16 @@ class AppController:
         if partner and partner != self.username and self.crypt_services:
             self.crypt_services.store_partner_bundle(partner, message)
             self.set_status(f"Keys obtained for {partner}. Try sending now.", "success")
+            
+            if partner in self.pending_messages:
+                encrypted_payload = self.pending_messages.pop(partner)
+                result = self.crypt_services.decrypt_message(partner, encrypted_payload)
+                if result and result != "NEEDS_BUNDLE":
+                    self.crypt_services.db.add_message(partner, partner, result)
+                    if self.current_partner == partner:
+                        self.update_ui("ADD_MESSAGE", (partner, result))
+                    else:
+                        self.set_status(f"New message from {partner}", "success")
 
     def send_friend_request(self, friend_username):
         if friend_username:

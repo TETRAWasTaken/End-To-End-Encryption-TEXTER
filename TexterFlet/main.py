@@ -422,11 +422,7 @@ def main(page: ft.Page):
                             ]),
                             bgcolor=COLORS["appbar"],
                             actions=[
-                                ft.IconButton(ft.Icons.VIDEO_CALL, icon_color=COLORS["text_primary"]),
-                                ft.IconButton(ft.Icons.CALL, icon_color=COLORS["text_primary"]),
-                                ft.PopupMenuButton(
-                                    items=[ft.PopupMenuItem(text="View contact"), ft.PopupMenuItem(text="Clear chat")]
-                                ),
+                                # Feature not implemented yet
                             ]
                         ),
                         ft.Stack(
@@ -475,8 +471,12 @@ def main(page: ft.Page):
         top_view = page.views[-1]
         page.go(top_view.route)
 
+    def lifecycle_change(e):
+        controller.handle_lifecycle_change(e.data)
+
     page.on_route_change = route_change
     page.on_view_pop = view_pop
+    page.on_app_lifecycle_state_change = lifecycle_change
 
     page.go("/login")
     controller.run()

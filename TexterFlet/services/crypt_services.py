@@ -93,6 +93,26 @@ class CryptServices:
                 self.db.close()
             return False
 
+    def load_database_without_password(self) -> bool:
+        try:
+            self.db.connect(b'')
+            if self.db.get_key("identity_key") is None:
+                raise ConnectionError("Corrupted DB or keys missing.")
+
+            self.x3dh.load_private_keys(
+                ik_priv_bytes=self.db.get_key("identity_key"),
+                spk_priv_bytes=self.db.get_key("signed_pre_key"),
+                ik_dh_priv_bytes=self.db.get_key("identity_key_dh")
+            )
+            self.private_opks = self.db.get_all_opks()
+            self.sessions = self.db.get_all_sessions()
+            return True
+        except Exception as e:
+            print(f"Database loading failed without password: {e}")
+            if self.db.is_connected():
+                self.db.close()
+            return False
+
     def save_contacts_to_disk(self):
         if self.db.is_connected():
             self.db.save_contacts(list(self.sessions.keys()))
