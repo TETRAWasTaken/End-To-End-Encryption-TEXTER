@@ -13,3 +13,5 @@ database.ini
 /TEXTERE2EE.build/
 /TEXTERE2EE.dist/
 /build/
+.idea/
+nuitka-packaging
