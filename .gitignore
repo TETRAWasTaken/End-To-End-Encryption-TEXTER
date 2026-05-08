@@ -15,3 +15,4 @@ database.ini
 /build/
 .idea/
 nuitka-packaging
+/TexterFlet/build/
