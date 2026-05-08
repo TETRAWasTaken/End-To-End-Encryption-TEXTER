@@ -68,14 +68,14 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
                     
-                    stored_hash = self.StorageManager.GetUserPasswordHash(user)
+                    stored_hash = await asyncio.to_thread(self.StorageManager.GetUserPasswordHash, user)
 
                     if not stored_hash:
                         await websocket.send(self.caching.payload("error", "Credfail"))
                         continue
 
                     try:
-                        self.ph.verify(stored_hash, passw)
+                        await asyncio.to_thread(self.ph.verify, stored_hash, passw)
                         session_token = self.caching.create_session_token(user)
                         payload = {
                             "text": "success",
@@ -114,19 +114,19 @@ class AuthenticatorAndKeyHandler:
                         await websocket.send(self.caching.payload("error", "Invalid format"))
                         continue
 
-                    if self.StorageManager.UserExists(user):
+                    if await asyncio.to_thread(self.StorageManager.UserExists, user):
                         await websocket.send(self.caching.payload("error", "AAE"))
                         continue
                     else:
-                        hashed_password = self.ph.hash(passw)
-                        if self.StorageManager.InsertUser(user, hashed_password):
+                        hashed_password = await asyncio.to_thread(self.ph.hash, passw)
+                        if await asyncio.to_thread(self.StorageManager.InsertUser, user, hashed_password):
                             await websocket.send(self.caching.payload("ok", "Registration Successful"))
 
                             response_payload = await websocket.recv()
                             response = json.loads(response_payload)
                             if response.get("command") == "publish_keys":
                                 key_bundle = response.get("bundle")
-                                if self.StorageManager.SaveKeyBundle(key_bundle, user):
+                                if await asyncio.to_thread(self.StorageManager.SaveKeyBundle, key_bundle, user):
                                     await websocket.send(self.caching.payload("ok", "keys_ok"))
                                 else:
                                     await websocket.send(self.caching.payload("error", "keys_fail"))
@@ -138,7 +138,7 @@ class AuthenticatorAndKeyHandler:
 
                 elif command == "check_user_existence":
                     username = payload.get("username")
-                    exists = self.StorageManager.UserExists(username)
+                    exists = await asyncio.to_thread(self.StorageManager.UserExists, username)
                     if exists:
                         await websocket.send(self.caching.payload("user_existence_status", "User_Exists"))
                     else:

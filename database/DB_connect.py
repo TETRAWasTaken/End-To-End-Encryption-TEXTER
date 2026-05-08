@@ -55,7 +55,7 @@ class DB_connect:
                 print("Connecting using Environment Variables...")
                 self.pool = pool.ThreadedConnectionPool(
                     minconn=1,
-                    maxconn=10,
+                    maxconn=50,
                     host=os.environ.get("DB_HOST"),
                     database=os.environ.get("DB_NAME"),
                     user=os.environ.get("DB_USER"),
@@ -66,7 +66,7 @@ class DB_connect:
             else:
                 print("Connecting using database.ini...")
                 config_params = self.load_config()
-                self.pool = pool.ThreadedConnectionPool(minconn=1, maxconn=10, **config_params)
+                self.pool = pool.ThreadedConnectionPool(minconn=1, maxconn=50, **config_params)
         except (psycopg2.DatabaseError, Exception) as e:
             print(f"Error occurred while connecting to PostgreSQL DB: {e}")
             self.pool = None
