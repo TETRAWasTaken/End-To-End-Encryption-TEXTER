@@ -114,7 +114,15 @@ class StorageManager:
         try:
             conn = self.DB.pool.getconn()
             cur = conn.cursor()
-            time_stamp_cr = datetime.datetime.now()
+            time_stamp_cr = datetime.datetime.now(datetime.timezone.utc)
+
+            required_fields = ("identity_key", "identity_key_dh", "signed_pre_key", "signature", "one_time_pre_keys")
+            missing_fields = [field for field in required_fields if field not in KeyBundle]
+            if missing_fields:
+                raise ValueError(f"Missing key bundle fields: {', '.join(missing_fields)}")
+
+            cur.execute("DELETE FROM onetime_pre_key WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM signed_key WHERE user_id = %s", (user_id,))
             cur.execute(
                 """
                 INSERT INTO identity_key (user_id, identity_key, identity_key_dh, time_stamp_creation) 
@@ -128,7 +136,14 @@ class StorageManager:
                 "INSERT INTO signed_key (user_id, signed_pre_key, signature, time_stamp_creation) VALUES (%s, %s, %s, %s)",
                 (user_id, KeyBundle['signed_pre_key'], KeyBundle['signature'], time_stamp_cr)
             )
-            one_time_rows = [(user_id, k, v, time_stamp_cr, False) for k, v in KeyBundle['one_time_pre_keys'].items()]
+            one_time_rows = []
+            for key_id, key_value in KeyBundle['one_time_pre_keys'].items():
+                try:
+                    normalized_key_id = int(key_id)
+                except (TypeError, ValueError):
+                    raise ValueError(f"Invalid one-time key id: {key_id!r}")
+                one_time_rows.append((user_id, normalized_key_id, key_value, time_stamp_cr, False))
+
             if one_time_rows:
                 cur.executemany(
                     "INSERT INTO onetime_pre_key (user_id, key_id, one_time_key, time_stamp_creation, is_used) VALUES (%s, %s, %s, %s, %s)",
