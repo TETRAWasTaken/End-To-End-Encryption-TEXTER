@@ -34,6 +34,88 @@ class caching:
         self._active_session_lock = threading.Lock()
 
         self.TOKEN_LIFESPAN = datetime.timedelta(days=7)
+        self._ensure_session_table()
+
+    def _ensure_session_table(self):
+        if not self.db.pool:
+            return
+
+        conn = None
+        cur = None
+        try:
+            conn = self.db.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id VARCHAR(100) NOT NULL REFERENCES User_Info(user_id) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_user_id ON session_tokens (user_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_created_at ON session_tokens (created_at)")
+            conn.commit()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error ensuring session token table exists: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.db.pool.putconn(conn)
+
+    def _write_session_token(self, token: str, user_id: str, created_at: datetime.datetime):
+        if not self.db.pool:
+            return
+
+        conn = None
+        cur = None
+        try:
+            conn = self.db.pool.getconn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO session_tokens (token, user_id, created_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (token)
+                DO UPDATE SET user_id = EXCLUDED.user_id, created_at = EXCLUDED.created_at
+                """,
+                (token, user_id, created_at)
+            )
+            conn.commit()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error writing session token: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.db.pool.putconn(conn)
+
+    def _delete_session_token(self, token: str):
+        if not self.db.pool:
+            return
+
+        conn = None
+        cur = None
+        try:
+            conn = self.db.pool.getconn()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM session_tokens WHERE token = %s", (token,))
+            conn.commit()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error deleting session token: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.db.pool.putconn(conn)
 
     @staticmethod
     def payload(status: str, message):
@@ -77,26 +159,63 @@ class caching:
         Generates a secure token for the user
         """
         token = secrets.token_hex(32)
-        timestamp = datetime.datetime.now()
+        timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         with self._active_session_lock:
             self.ACTIVE_SESSIONS[token] = (user_id, timestamp)
+
+        self._write_session_token(token, user_id, timestamp)
         return token
 
     def validate_session_token(self, token: str) -> str | None:
         """
         Returns user_id if token is valid, else None
         """
+        now = datetime.datetime.now(datetime.timezone.utc)
+
         with self._active_session_lock:
             if token in self.ACTIVE_SESSIONS:
                 user_id, creation_time = self.ACTIVE_SESSIONS[token]
 
-                if datetime.datetime.now() - creation_time > self.TOKEN_LIFESPAN:
+                if now - creation_time > self.TOKEN_LIFESPAN:
                     del self.ACTIVE_SESSIONS[token]
+                    self._delete_session_token(token)
                     return None
 
                 return user_id
+
+        if not self.db.pool:
             return None
+
+        conn = None
+        cur = None
+        try:
+            conn = self.db.pool.getconn()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, created_at FROM session_tokens WHERE token = %s", (token,))
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            user_id, creation_time = row
+            if now - creation_time > self.TOKEN_LIFESPAN:
+                cur.execute("DELETE FROM session_tokens WHERE token = %s", (token,))
+                conn.commit()
+                return None
+
+            with self._active_session_lock:
+                self.ACTIVE_SESSIONS[token] = (user_id, creation_time)
+            return user_id
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            print(f"Error validating session token: {e}")
+            return None
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                self.db.pool.putconn(conn)
 
     def remove_session_token(self, token: str):
         """
@@ -105,6 +224,8 @@ class caching:
         with self._active_session_lock:
             if token in self.ACTIVE_SESSIONS:
                 del self.ACTIVE_SESSIONS[token]
+
+        self._delete_session_token(token)
 
     def add_active_user(self, websocket, user_id: str, socket_handler=None):
         """

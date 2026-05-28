@@ -27,9 +27,18 @@ class AppController:
         self.connect_network_signals()
 
     def run(self):
-        # Check for saved token on startup
-        saved_token = self.page.client_storage.get("session_token")
-        saved_username = self.page.client_storage.get("username")
+        # Check for saved token on startup (with fallback if client_storage not available)
+        saved_token = None
+        saved_username = None
+        
+        try:
+            if hasattr(self.page, 'client_storage') and self.page.client_storage:
+                saved_token = self.page.client_storage.get("session_token")
+                saved_username = self.page.client_storage.get("username")
+        except Exception as e:
+            print(f"Client storage not available: {e}")
+            saved_token = None
+            saved_username = None
 
         if saved_token and saved_username:
             print(f"Found saved session for {saved_username}")
@@ -42,6 +51,40 @@ class AppController:
 
         self.network.start()
         self.network.connect()
+
+    def _apply_session_storage(self, token: str, username: str):
+        try:
+            if hasattr(self.page, 'client_storage') and self.page.client_storage:
+                self.page.client_storage.set("session_token", token)
+                self.page.client_storage.set("username", username)
+        except Exception as e:
+            print(f"Could not save session to storage: {e}")
+
+    async def _schedule_session_storage(self, token: str, username: str):
+        self._apply_session_storage(token, username)
+
+    def _save_session_to_storage(self, token: str, username: str):
+        try:
+            self.page.run_task(self._schedule_session_storage, token, username)
+        except Exception:
+            self._apply_session_storage(token, username)
+
+    def _apply_session_removal(self):
+        try:
+            if hasattr(self.page, 'client_storage') and self.page.client_storage:
+                self.page.client_storage.remove("session_token")
+                self.page.client_storage.remove("username")
+        except Exception as e:
+            print(f"Could not remove session from storage: {e}")
+
+    async def _schedule_session_removal(self):
+        self._apply_session_removal()
+
+    def _clear_session_storage(self):
+        try:
+            self.page.run_task(self._schedule_session_removal)
+        except Exception:
+            self._apply_session_removal()
 
     def handle_lifecycle_change(self, state: str):
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
@@ -63,10 +106,6 @@ class AppController:
         # If NOT (logout state), enable the buttons.
         if self.network.session_token:
             self.set_status(f"Resuming session as {self.username}...", "info")
-            self.network.send_payload(json.dumps({
-                "command": "token_login",
-                "token": self.network.session_token
-            }))
         else:
             self.update_ui("ENABLE_LOGIN")
 
@@ -90,8 +129,8 @@ class AppController:
                     if isinstance(message, dict) and "session_token" in message:
                         token = message["session_token"]
                         self.network.set_session_token(token)
-                        self.page.client_storage.set("session_token", token)
-                        self.page.client_storage.set("username", self.username)
+                        if self.username:
+                            self._save_session_to_storage(token, self.username)
 
                     self.on_login_success()
 
@@ -103,7 +142,8 @@ class AppController:
                     self.set_status("Keys published! You can log in.", "success")
 
             elif status == "error":
-                if "Invalid token" in str(message):
+                error_text = str(message).lower()
+                if "token" in error_text and ("invalid" in error_text or "expired" in error_text):
                     self.logout()
 
                 self.set_status(f"Server Error: {message}", "error")
@@ -248,6 +288,10 @@ class AppController:
             self.set_status("Select a contact first!", "error")
             return
 
+        if not self.username:
+            self.set_status("Not logged in", "error")
+            return
+
         if not self.crypt_services:
             self.set_status("Encryption service not ready", "error")
             return
@@ -330,8 +374,10 @@ class AppController:
 
     def logout(self):
         # 1. Clear persistent storage
-        self.page.client_storage.remove("session_token")
-        self.page.client_storage.remove("username")
+        try:
+            self._clear_session_storage()
+        except Exception as e:
+            print(f"Could not remove session from storage: {e}")
 
         # 2. Logout from network (closes socket)
         self.network.logout()

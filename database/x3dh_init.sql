@@ -15,6 +15,17 @@ CREATE TABLE User_Info (
     time_stamp_creation TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Table to store persistent session tokens for auto-login across server restarts.
+CREATE TABLE session_tokens (
+    token TEXT PRIMARY KEY,
+    user_id VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_session_user FOREIGN KEY(user_id) REFERENCES User_Info(user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_session_tokens_user_id ON session_tokens (user_id);
+CREATE INDEX idx_session_tokens_created_at ON session_tokens (created_at);
+
 -- Table to store the long-term identity key of each registered user.
 -- Storing as TEXT (Base64 encoded string).
 CREATE TABLE identity_key (
