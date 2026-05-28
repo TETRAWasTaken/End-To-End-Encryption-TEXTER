@@ -1,7 +1,10 @@
 import json
 import asyncio
+import os
 import traceback
 from os.path import exists
+
+from flet import StoragePaths
 
 from services.network_service import NetworkService
 from services.crypt_services import CryptServices
@@ -23,24 +26,63 @@ class AppController:
 
         self._temp_register_username = None
         self._temp_register_password = None
+        self._session_file_path = None
 
         self.connect_network_signals()
 
     def run(self):
-        # Check for saved token on startup (with fallback if client_storage not available)
-        saved_token = None
-        saved_username = None
-        
         try:
-            if hasattr(self.page, 'client_storage') and self.page.client_storage:
-                saved_token = self.page.client_storage.get("session_token")
-                saved_username = self.page.client_storage.get("username")
+            self.page.run_task(self._startup_async)
         except Exception as e:
-            print(f"Client storage not available: {e}")
-            saved_token = None
-            saved_username = None
+            print(f"Failed to start app controller: {e}")
 
-        if saved_token and saved_username:
+    async def _get_session_file_path(self):
+        if self._session_file_path:
+            return self._session_file_path
+
+        storage_paths = StoragePaths()
+        support_dir = await storage_paths.get_application_support_directory()
+        app_dir = os.path.join(support_dir, "texter_e2ee")
+        os.makedirs(app_dir, exist_ok=True)
+        self._session_file_path = os.path.join(app_dir, "session.json")
+        return self._session_file_path
+
+    async def _load_saved_session(self):
+        session_file = await self._get_session_file_path()
+        if not os.path.exists(session_file):
+            return None
+
+        try:
+            with open(session_file, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            token = payload.get("session_token")
+            username = payload.get("username")
+            if token and username:
+                return token, username
+        except Exception as e:
+            print(f"Could not load saved session: {e}")
+        return None
+
+    async def _save_session_to_storage(self, token: str, username: str):
+        session_file = await self._get_session_file_path()
+        try:
+            with open(session_file, "w", encoding="utf-8") as handle:
+                json.dump({"session_token": token, "username": username}, handle)
+        except Exception as e:
+            print(f"Could not save session to storage: {e}")
+
+    async def _clear_session_storage(self):
+        session_file = await self._get_session_file_path()
+        try:
+            if os.path.exists(session_file):
+                os.remove(session_file)
+        except Exception as e:
+            print(f"Could not remove session from storage: {e}")
+
+    async def _startup_async(self):
+        saved_session = await self._load_saved_session()
+        if saved_session:
+            saved_token, saved_username = saved_session
             print(f"Found saved session for {saved_username}")
             self.username = saved_username
             self.network.set_session_token(saved_token)
@@ -51,40 +93,6 @@ class AppController:
 
         self.network.start()
         self.network.connect()
-
-    def _apply_session_storage(self, token: str, username: str):
-        try:
-            if hasattr(self.page, 'client_storage') and self.page.client_storage:
-                self.page.client_storage.set("session_token", token)
-                self.page.client_storage.set("username", username)
-        except Exception as e:
-            print(f"Could not save session to storage: {e}")
-
-    async def _schedule_session_storage(self, token: str, username: str):
-        self._apply_session_storage(token, username)
-
-    def _save_session_to_storage(self, token: str, username: str):
-        try:
-            self.page.run_task(self._schedule_session_storage, token, username)
-        except Exception:
-            self._apply_session_storage(token, username)
-
-    def _apply_session_removal(self):
-        try:
-            if hasattr(self.page, 'client_storage') and self.page.client_storage:
-                self.page.client_storage.remove("session_token")
-                self.page.client_storage.remove("username")
-        except Exception as e:
-            print(f"Could not remove session from storage: {e}")
-
-    async def _schedule_session_removal(self):
-        self._apply_session_removal()
-
-    def _clear_session_storage(self):
-        try:
-            self.page.run_task(self._schedule_session_removal)
-        except Exception:
-            self._apply_session_removal()
 
     def handle_lifecycle_change(self, state: str):
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
@@ -130,7 +138,7 @@ class AppController:
                         token = message["session_token"]
                         self.network.set_session_token(token)
                         if self.username:
-                            self._save_session_to_storage(token, self.username)
+                            self.page.run_task(self._save_session_to_storage, token, self.username)
 
                     self.on_login_success()
 
@@ -375,7 +383,7 @@ class AppController:
     def logout(self):
         # 1. Clear persistent storage
         try:
-            self._clear_session_storage()
+            self.page.run_task(self._clear_session_storage)
         except Exception as e:
             print(f"Could not remove session from storage: {e}")
 
