@@ -7,6 +7,7 @@ DROP TABLE IF  EXISTS friend_requests CASCADE;
 DROP TABLE IF EXISTS User_Info CASCADE;
 DROP TABLE IF EXISTS friends CASCADE;
 DROP TYPE IF EXISTS status_type CASCADE;
+DROP TABLE IF EXISTS session_tokens CASCADE;
 
 -- Table to store each registered user's username and a secure password hash.
 CREATE TABLE User_Info (
