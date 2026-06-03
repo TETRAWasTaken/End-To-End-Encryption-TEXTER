@@ -42,8 +42,31 @@ jobs:
           cryptography==46.0.3
           argon2-cffi==25.1.0
           argon2-cffi-bindings==25.1.0
+          fastapi
+          PyJWT
           EOF
           
+          # 3. Build Rust Auth Server
+          echo "Building Rust Auth Server..."
+          cd AuthServer
+          cargo build --release
+          # Find the compiled binary and copy it to the root
+          EXEC_NAME=$(find target/release -maxdepth 1 -type f -executable -not -name "*.so" -not -name "*.d" | head -n 1)
+          cp "$EXEC_NAME" ../auth_server_bin
+          cd ..
+
+          # 4. Create Startup Script
+          echo "Generating startup.sh..."
+          cat > startup.sh <<'EOF'
+          #!/bin/bash
+          echo "Starting Auth Server in the background on port 8080..."
+          PORT=8080 ./auth_server_bin &
+          
+          echo "Starting Python WebSocket Server..."
+          python -m uvicorn Server.secure_asgi_server:app --host 0.0.0.0 --port ${WEBSITES_PORT:-8000}
+          EOF
+          chmod +x startup.sh
+
           echo "--- Final Deployment Package ---"
           ls -la
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from services import utils
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.primitives import serialization
 import secrets
@@ -14,7 +14,7 @@ class X3DH:
         self.signed_pre_key_private: x25519.X25519PrivateKey | None = None
         self.one_time_pre_keys_private: Dict[int, x25519.X25519PrivateKey] = {}
 
-    def generate_key_bundle(self, num_one_time_keys: int = 10) -> Dict:
+    def generate_key_bundle(self, num_one_time_keys: int = 10) -> dict[str, Any]:
         self.identity_key_private, ik_public = self._encryption_util.generate_ed25519_key_pair()
         self.identity_key_dh_private, ik_dh_public = self._encryption_util.generate_x25519_key_pair()
         self.signed_pre_key_private, spk_public = self._encryption_util.generate_x25519_key_pair()
@@ -36,7 +36,7 @@ class X3DH:
             "one_time_pre_keys": opk_public_dict
         }
 
-    def get_private_keys_for_saving(self) -> Dict[str, bytes | Dict[int, bytes]]:
+    def get_private_keys_for_saving(self) -> utils.PrivateKeys:
         if not all([self.identity_key_private, self.signed_pre_key_private, self.identity_key_dh_private]):
             raise Exception("Private keys not generated or loaded.")
 
@@ -54,19 +54,21 @@ class X3DH:
             }
         }
 
-    def load_private_keys(self, ik_priv_bytes: bytes, spk_priv_bytes: bytes, ik_dh_priv_bytes: bytes | None = None):
+    def load_private_keys(self, ik_priv_bytes: bytes, spk_priv_bytes: bytes, ik_dh_priv_bytes: bytes | None = None) -> None:
         self.identity_key_private = ed25519.Ed25519PrivateKey.from_private_bytes(ik_priv_bytes)
         self.signed_pre_key_private = x25519.X25519PrivateKey.from_private_bytes(spk_priv_bytes)
         if ik_dh_priv_bytes:
             self.identity_key_dh_private = x25519.X25519PrivateKey.from_private_bytes(ik_dh_priv_bytes)
         print("Successfully loaded private keys into X3DH object.")
 
-    def perform_x3dh_initiator(self, partner_bundle: Dict) -> Tuple[bytes, bytes, bytes]:
+    def perform_x3dh_initiator(self, partner_bundle: dict[str, Any]) -> tuple[bytes, x25519.X25519PublicKey, ed25519.Ed25519PublicKey]:
         ek_private, ek_public = self._encryption_util.generate_x25519_key_pair()
         partner_ik_dh_public = partner_bundle["identity_key_dh"]
         partner_spk_public = partner_bundle["signed_pre_key"]
         partner_opk_public = partner_bundle["one_time_pre_key"]
 
+        if self.identity_key_dh_private is None:
+            raise ValueError("Identity DH private key not loaded.")
         dh1 = self.identity_key_dh_private.exchange(partner_spk_public)
         dh2 = ek_private.exchange(partner_ik_dh_public)
         dh3 = ek_private.exchange(partner_spk_public)
@@ -75,11 +77,13 @@ class X3DH:
         sk = self._encryption_util.hkdf(input_key_material=b"LIT" + dh1 + dh2 + dh3 + dh4, salt=b'\x00' * 32)
         return sk, ek_public, partner_bundle["identity_key"]
 
-    def perform_x3dh_responder(self, initial_message: Dict) -> bytes:
+    def perform_x3dh_responder(self, initial_message: dict[str, Any]) -> bytes:
         initiator_ik_public = initial_message["identity_key"]
         initiator_ek_public = initial_message["ephemeral_key"]
         opk_id_used = initial_message["opk_id"]
 
+        if self.signed_pre_key_private is None or self.identity_key_dh_private is None:
+            raise ValueError("Private keys not loaded.")
         dh1 = self.signed_pre_key_private.exchange(initiator_ik_public)
         dh2 = self.identity_key_dh_private.exchange(initiator_ek_public)
         dh3 = self.signed_pre_key_private.exchange(initiator_ek_public)

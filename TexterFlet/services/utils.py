@@ -4,6 +4,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+from typing import TypedDict
 import os
 
 # Constants
@@ -62,3 +63,8 @@ class EncryptionUtil:
             backend=default_backend()
         )
         return hkdf.derive(input_key_material)
+    
+class PrivateKeys(TypedDict):
+    identity_key: bytes
+    identity_key_dh: bytes
+    signed_pre_key: bytes

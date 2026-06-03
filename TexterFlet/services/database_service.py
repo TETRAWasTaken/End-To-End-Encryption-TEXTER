@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import pickle
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
 from services.double_ratchet import DoubleRatchetSession
@@ -11,13 +11,13 @@ class DatabaseService:
         self._db_path = db_path
         self.conn: Optional[sqlite3.Connection] = None
 
-    def connect(self, file_key: bytes):
+    def connect(self, file_key: bytes) -> None:
         # NOTE: file_key is accepted but not used here as we are using standard SQLite.
         self.conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         print(f"Database connected at {self._db_path}.")
 
-    def close(self):
+    def close(self) -> None:
         if self.conn:
             self.conn.close()
             self.conn = None
@@ -25,7 +25,7 @@ class DatabaseService:
     def is_connected(self) -> bool:
         return self.conn is not None
 
-    def create_tables(self):
+    def create_tables(self) -> None:
         if not self.conn:
             raise ConnectionError("Database is not connected.")
         with self.conn:
@@ -43,7 +43,7 @@ class DatabaseService:
                 )
             """)
 
-    def save_key(self, key_name: str, key_data: bytes):
+    def save_key(self, key_name: str, key_data: bytes) -> None:
         if not self.conn: return
         with self.conn:
             self.conn.execute("INSERT OR REPLACE INTO keystore (key_name, key_data) VALUES (?, ?)", (key_name, key_data))
@@ -54,7 +54,7 @@ class DatabaseService:
         row = cursor.fetchone()
         return row['key_data'] if row else None
 
-    def save_session(self, partner_id: str, session: DoubleRatchetSession):
+    def save_session(self, partner_id: str, session: DoubleRatchetSession) -> None:
         if not self.conn: return
         with self.conn:
             self.conn.execute("INSERT OR REPLACE INTO sessions (partner_id, session_data) VALUES (?, ?)", (partner_id, pickle.dumps(session)))
@@ -70,7 +70,7 @@ class DatabaseService:
         cursor = self.conn.execute("SELECT partner_id, session_data FROM sessions")
         return {row['partner_id']: pickle.loads(row['session_data']) for row in cursor.fetchall()}
 
-    def save_opks(self, opks: Dict[int, x25519.X25519PrivateKey]):
+    def save_opks(self, opks: Dict[int, x25519.X25519PrivateKey]) -> None:
         if not self.conn: return
         opk_list = [
             (key_id, opk_priv.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
@@ -95,7 +95,7 @@ class DatabaseService:
                 return x25519.X25519PrivateKey.from_private_bytes(row['private_key'])
         return None
 
-    def save_contacts(self, contacts: List[str]):
+    def save_contacts(self, contacts: List[str]) -> None:
         if not self.conn: return
         with self.conn:
             self.conn.execute("DELETE FROM contacts")
@@ -109,15 +109,15 @@ class DatabaseService:
     def get_salt(self) -> Optional[bytes]:
         return self.get_key("pbkdf2_salt")
 
-    def save_salt(self, salt: bytes):
+    def save_salt(self, salt: bytes) -> None:
         self.save_key("pbkdf2_salt", salt)
 
-    def add_message(self, partner_id: str, sender: str, message: str):
+    def add_message(self, partner_id: str, sender: str, message: str) -> None:
         if not self.conn: return
         with self.conn:
             self.conn.execute("INSERT INTO messages (partner_id, sender, message) VALUES (?, ?, ?)", (partner_id, sender, message))
 
-    def get_messages(self, partner_id: str) -> List[Dict]:
+    def get_messages(self, partner_id: str) -> List[Dict[str, Any]]:
         if not self.conn: return []
         cursor = self.conn.execute("SELECT sender, message, timestamp FROM messages WHERE partner_id = ? ORDER BY timestamp ASC", (partner_id,))
         return [dict(row) for row in cursor.fetchall()]

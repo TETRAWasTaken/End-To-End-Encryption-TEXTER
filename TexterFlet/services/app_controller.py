@@ -5,6 +5,7 @@ import traceback
 from os.path import exists
 
 from flet import StoragePaths
+import httpx
 
 from services.network_service import NetworkService
 from services.crypt_services import CryptServices
@@ -131,33 +132,7 @@ class AppController:
             status = payload.get("status")
             message = payload.get("message")
 
-            if status == "ok":
-                if message == "success" or (isinstance(message, dict) and message.get("text") == "success"):
-                    # Save token on successful login
-                    if isinstance(message, dict) and "session_token" in message:
-                        token = message["session_token"]
-                        self.network.set_session_token(token)
-                        if self.username:
-                            self.page.run_task(self._save_session_to_storage, token, self.username)
-
-                    self.on_login_success()
-
-                elif message == "Registration Successful":
-                    self.set_status("Registered! Publishing keys...", "info")
-                    self.network.schedule_task(self.handle_publish_keys())
-
-                elif message == "keys_ok":
-                    self.set_status("Keys published! You can log in.", "success")
-
-            elif status == "error":
-                error_text = str(message).lower()
-                if "token" in error_text and ("invalid" in error_text or "expired" in error_text):
-                    self.logout()
-
-                self.set_status(f"Server Error: {message}", "error")
-                self.update_ui("ENABLE_LOGIN")
-
-            elif status == "new_friend_request":
+            if status == "new_friend_request":
                 from_user = message.get("from")
                 self.update_ui("ADD_REQUEST", from_user)
 
@@ -216,61 +191,75 @@ class AppController:
                 self.set_status("Invalid credentials or DB corrupt", "error")
                 return
 
-            self.network.set_credentials(username, password)
-            self.set_status("Logging in...", "info")
-
-            if self.network.is_connected:
-                self.network.send_payload(json.dumps({
-                    "command": "login",
-                    "credentials": {"username": username, "password": password}
-                }))
-            else:
-                self.network.connect()
-
+            self.page.run_task(self.async_login, username, password)
         except Exception as e:
             self.set_status(f"Login failed: {str(e)}", "error")
 
-    def handle_register_request(self, username, password):
-        self._temp_register_password = password
-        self._temp_register_username = username
+    async def async_login(self, username, password):
+        self.set_status("Logging in...", "info")
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.network.auth_url}/api/auth/login",
+                    json={"username": username, "password": password}
+                )
 
-        self.set_status("Checking Avaibility...", "info")
-        self.network.send_payload(json.dumps({
-            "command": "check_user_existence",
-            "username": username
-        }))
+            if resp.status_code == 200:
+                token = resp.json().get("session_token")
+                self.network.set_session_token(token)
+                await self._save_session_to_storage(token, username)
+                self.network.connect() 
+                self.on_login_success()
+            else:
+                self.set_status("Login failed: Invalid credentials", "error")
+                self.update_ui("ENABLE_LOGIN")
+        
+        except Exception as e:
+            self.set_status(f"Auth Network Error: {str(e)}", "error")
+            self.update_ui("ENABLE_LOGIN")
+
+
+    def handle_register_request(self, username, password):
+        self.page.run_task(self.async_register, username, password)
 
     async def async_register(self, username, password):
         try:
+            self.set_status("Generating Encryption Keys...", "info")
             self.username = username
             self.crypt_services = CryptServices(username)
-            self.public_bundle = await asyncio.to_thread(
-                self.crypt_services.generate_and_save_key,
+
+            self.publish_bundle = await asyncio.to_thread(
+                self.crypt_services.generate_and_save_key, 
                 password,
                 True
             )
-            if self.public_bundle is None:
-                self.set_status("Failure in Key generation", "error")
+            if self.publish_bundle is None:
+                self.set_status("Key generation failed", "error")
                 return
+            
+            self.set_status("Registering with server...", "info")
 
-            self.set_status("Registering...", "info")
-            self.network.send_payload(json.dumps({
-                "command": "register",
-                "credentials": {"username": username, "password": password}
-            }))
-            self._temp_register_password = None
-            self._temp_register_username = None
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.network.auth_url}/api/auth/register",
+                    json={
+                        "username": username, 
+                        "password": password,
+                        "key_bundle": self.publish_bundle}
+                )
+            
+            if resp.status_code == 201:
+                self.set_status("Registration successful! Keys Published!", "success")
+                await self.async_login(username, password)
+            
+            elif resp.status_code == 409:
+                self.set_status("Username already exists", "error")
+            
+            else:
+                self.set_status(f"Registration failed: {resp.text}", "error")
 
         except Exception as e:
             self.set_status(f"Reg Error: {str(e)}", "error")
-
-    async def handle_publish_keys(self):
-        if self.public_bundle:
-            self.network.send_payload(json.dumps({
-                "command": "publish_keys",
-                "bundle": self.public_bundle
-            }))
-            self.public_bundle = None
 
     def on_login_success(self):
         if self.crypt_services:

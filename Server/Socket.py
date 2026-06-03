@@ -146,7 +146,7 @@ class Server:
         the command queue for processing.
         """
         try:
-            async for payload_str in self.websocket:
+            async for payload_str in self.websocket.iter_text():
                 try:
                     payload = json.loads(payload_str)
                     cmd = payload.get("command")
@@ -215,7 +215,7 @@ class Server:
             msg_payload: The JSON payload to send to the client.
         """
         try:
-            asyncio.run_coroutine_threadsafe(self.websocket.send(json.dumps(msg_payload)), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send_text(json.dumps(msg_payload)), self.loop)
         except Exception as e:
             print(f"Error in socket.send_text: {e}")
 
@@ -234,7 +234,7 @@ class Server:
         try:
             if not self.caching.check_credentials(partner_id):
                 payload = self.caching.payload("User_Select", 'User Not Available')
-                asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(payload), self.loop)
                 return
 
             if self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
@@ -244,12 +244,12 @@ class Server:
                 else:
                     payload = self.caching.payload("User_Select", 'User Not Online but Friends')
 
-                asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(payload), self.loop)
                 print(f"User {self.user_id} selected {partner_id}. Retrieving cached messages.")
                 self.caching.retrieve_cached_messages(self.user_id, partner_id)
             else:
                 payload = self.caching.payload('User_Select', 'User Not Friend')
-                asyncio.run_coroutine_threadsafe(self.websocket.send(payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(payload), self.loop)
         except Exception as e:
             print(f"Error in select_user: {e}")
 
@@ -268,21 +268,21 @@ class Server:
         try:
             if not self.StorageManager.CheckFriendsStatus(self.user_id, partner_id):
                 fail_payload = self.caching.payload("key_bundle_fail", "not_friends")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(fail_payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(fail_payload), self.loop)
                 return
 
             key_bundle = self.StorageManager.LoadKeyBundle(partner_id)
             if not key_bundle or not key_bundle.get("identity_key"):
                 fail_payload = self.caching.payload("key_bundle_fail", "no_key_bundle")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(fail_payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(fail_payload), self.loop)
             else:
                 success_payload = self.caching.payload("key_bundle_ok", key_bundle)
-                asyncio.run_coroutine_threadsafe(self.websocket.send(success_payload), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(success_payload), self.loop)
 
         except Exception as e:
             print(f"Error in handle_key_bundle_request: {e}")
             error_payload = self.caching.payload("key_bundle_fail", "server_error")
-            asyncio.run_coroutine_threadsafe(self.websocket.send(error_payload), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send_text(error_payload), self.loop)
 
     def handle_friend_request(self, payload: dict):
         """
@@ -302,7 +302,7 @@ class Server:
 
             if success:
                 response = self.caching.payload("friend_request_status", "sent")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
 
                 target_websocket = self.caching.get_active_user_websocket(to_user)
                 if target_websocket:
@@ -317,12 +317,12 @@ class Server:
                             target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_status", "failed")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
 
         except Exception as e:
             print(f"Error in handle_friend_request: {e}")
             response = self.caching.payload("friend_request_status", "error")
-            asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
 
     def handle_get_pending_friend_requests(self, payload: dict = None):
         """
@@ -337,7 +337,7 @@ class Server:
         try:
             pending_requests = self.StorageManager.GetPendingFriendRequests(self.user_id)
             response = self.caching.payload("pending_friend_requests", pending_requests)
-            asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
         except Exception as e:
             print(f"Error in handle_get_pending_friend_requests: {e}")
 
@@ -359,7 +359,7 @@ class Server:
 
             if success:
                 response_to_acceptor = self.caching.payload("friend_request_accepted", {"friend_username": from_user})
-                asyncio.run_coroutine_threadsafe(self.websocket.send(response_to_acceptor), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(response_to_acceptor), self.loop)
 
                 target_websocket = self.caching.get_active_user_websocket(from_user)
                 if target_websocket:
@@ -377,9 +377,9 @@ class Server:
                             target_socket_handler.queue_external_command(command_payload)
             else:
                 response = self.caching.payload("friend_request_accepted_status", "failed")
-                asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+                asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
 
         except Exception as e:
             print(f"Error in handle_accept_friend_request: {e}")
             response = self.caching.payload("friend_request_accepted_status", "error")
-            asyncio.run_coroutine_threadsafe(self.websocket.send(response), self.loop)
+            asyncio.run_coroutine_threadsafe(self.websocket.send_text(response), self.loop)
