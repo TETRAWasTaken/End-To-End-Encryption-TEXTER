@@ -1,3 +1,5 @@
 flet
 cryptography
 websockets
+certifi
+httpx

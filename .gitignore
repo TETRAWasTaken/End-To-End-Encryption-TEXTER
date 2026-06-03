@@ -16,3 +16,4 @@ database.ini
 .idea/
 nuitka-packaging
 /TexterFlet/build/
+/AuthServer/target/

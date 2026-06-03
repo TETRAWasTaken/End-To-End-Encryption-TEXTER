@@ -3,11 +3,12 @@ import os
 import threading
 import ssl
 import json
+import httpx
 import websockets
 
 
 class NetworkService:
-    def __init__(self, host_uri="textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"):
+    def __init__(self, auth_url=None, ws_uri="textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"):
         self.callbacks = {
             'on_connected': [],
             'on_disconnected': [],
@@ -18,30 +19,22 @@ class NetworkService:
 
         self._should_reconnect = None
         self.websocket = None
-        self.host_uri = 'wss://' + host_uri
+        self.ws_uri = 'wss://' + ws_uri if not ws_uri.startswith('wss://') else ws_uri
+        self.auth_url = auth_url 
         self._create_ssl_context()
 
         self.loop = None
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._shutdown_event = threading.Event()
         self._loop_started = threading.Event()
-
-        self._saved_username = None
-        self._saved_password = None
         self.session_token = None
 
-        # Manual flag to track connection state (avoids websockets version issues)
         self._connected = False
 
     @property
     def is_connected(self):
         """Check if the websocket is actively connected."""
         return self._connected
-
-    def set_credentials(self, username: str, password: str):
-        """Stores credentials for auto-login on reconnect."""
-        self._saved_username = username
-        self._saved_password = password
 
     def set_session_token(self, token: str):
         """Stores the session token for token-based login."""
@@ -85,35 +78,45 @@ class NetworkService:
             return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def _create_ssl_context(self):
-        import certifi
-        try:
-            cafile = certifi.where()
-            if os.path.exists(cafile):
-                self.ssl_context = ssl.create_default_context(cafile=cafile)
-            else:
+        if self.ws_uri.startswith("wss://"):
+            import certifi
+            try:
+                cafile = certifi.where()
+                if os.path.exists(cafile):
+                    self.ssl_context = ssl.create_default_context(cafile=cafile)
+                else:
+                    self.ssl_context = ssl.create_default_context()
+            except:
                 self.ssl_context = ssl.create_default_context()
-        except:
-            self.ssl_context = ssl.create_default_context()
 
     async def _connection_manager(self):
         self._should_reconnect = True
         while self._should_reconnect:
+            if not self.session_token:
+                self._dispatch('on_error_occurred', "Cannot connect: No session token.")
+                break
+
             try:
-                self.websocket = await websockets.connect(self.host_uri, ssl=self.ssl_context)
+                # 1. Fetch the 15-second ticket from the Rust Auth Server
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"{self.auth_url}/api/auth/ws_ticket",
+                        headers={"Authorization": f"Bearer {self.session_token}"}
+                    )
+                
+                if resp.status_code != 200:
+                    self._dispatch('on_error_occurred', "Invalid or Expired Token. Please log in again.")
+                    self._should_reconnect = False
+                    break
+                
+                ticket = resp.json().get("ticket")
+
+                # 2. Connect to the Python WebSocket Server with the ticket
+                connect_url = f"{self.ws_uri}?ticket={ticket}"
+                self.websocket = await websockets.connect(connect_url, ssl=self.ssl_context)
+                
                 self._connected = True
                 self._dispatch('on_connected')
-
-                if self.session_token:
-                    await self.websocket.send(json.dumps({
-                        "command": "token_login",
-                        "token": self.session_token
-                    }))
-                elif self._saved_username and self._saved_password:
-                    await self.websocket.send(json.dumps({
-                        "command": "login",
-                        "credentials": {"username": self._saved_username, "password": self._saved_password}
-                    }))
-
                 await self.listen()
 
             except Exception as e:
@@ -121,7 +124,6 @@ class NetworkService:
                 self._dispatch('on_error_occurred', f"Connection failed: {e}")
                 self._dispatch('on_disconnected')
 
-            # Cleanup
             self._connected = False
             if self.websocket:
                 try:
@@ -135,16 +137,14 @@ class NetworkService:
             if self._should_reconnect:
                 self._dispatch('on_reconnecting')
                 await asyncio.sleep(5)
-
+                
     async def listen(self):
         try:
             async for message in self.websocket:
                 msg_json = json.loads(message)
-                # FIXED: Removed 'None' argument
                 self._dispatch('on_message_received', msg_json)
         except Exception as e:
             if self._should_reconnect:
-                # FIXED: Removed 'None' argument
                 self._dispatch('on_error_occurred', f"Listen error: {e}")
         finally:
             self._connected = False
@@ -154,10 +154,8 @@ class NetworkService:
             try:
                 await self.websocket.send(payload)
             except Exception as e:
-                # FIXED: Removed 'None' argument
                 self._dispatch('on_error_occurred', f"Send error: {e}")
         else:
-            # FIXED: Removed 'None' argument
             self._dispatch('on_error_occurred', "Cannot send: Not connected")
 
     def connect(self):
@@ -170,8 +168,6 @@ class NetworkService:
 
     def logout(self):
         self._should_reconnect = False
-        self._saved_username = None
-        self._saved_password = None
         self.session_token = None
 
         if self.websocket:
