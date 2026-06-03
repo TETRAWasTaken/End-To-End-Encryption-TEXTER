@@ -2,8 +2,7 @@ use axum::{
     Json, Router, extract::{FromRequestParts, State}, http::{StatusCode, request::Parts}, routing::post
 };
 use axum::http::header::AUTHORIZATION;
-use jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER as JWT_DEFAULT_PROVIDER;
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -51,27 +50,30 @@ where
 }
 
 pub async fn ws_ticket_handler(
-    State(state): State<Arc<AppState>>,
     claims: Claims
 ) -> Result<Json<TicketResponse>, (StatusCode, String)> {
 
-    let ticket = Uuid::new_v4().to_string();
-    let redis_key = format!("ws_ticket:{}", ticket);
+    let short_expiration = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::minutes(5))
+        .unwrap()
+        .timestamp() as usize;
 
-    let mut con = state.redis_client.get_multiplexed_async_connection().await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Redis Connection Failed".to_string()))?;
+    let ticket_claims = Claims {
+        sub: claims.sub.clone(),
+        exp: short_expiration,
+    };
 
-    let _: () = redis::AsyncCommands::set_ex(&mut con, redis_key, &claims.sub, 300)
-    .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Redis set failed".to_string()))?;
+    let ticket_jwt = encode(
+        &Header::default(),
+        &ticket_claims,
+        &EncodingKey::from_secret(SECRET_KEY.get().expect("SECRET_KEY must be initialized").as_bytes())
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create ticket: {}", e)))?;
 
-    Ok(Json(TicketResponse { ticket }))
+    Ok(Json(TicketResponse { ticket: ticket_jwt }))
 }
 
 #[tokio::main]
 async fn main() {
-    let _ = JWT_DEFAULT_PROVIDER.install_default();
-
     // Check for environment variable, otherwise generate an ephemeral random key
     let secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| {
@@ -79,11 +81,6 @@ async fn main() {
             format!("{}{}", Uuid::new_v4(), Uuid::new_v4())
         });
     SECRET_KEY.set(secret).expect("Failed to set SECRET_KEY");
-
-    let redis_url = std::env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
-    let redis_client = redis::Client::open(redis_url)
-        .expect("Failed to connect to the client");
 
     let database_url = std::env::var("DATABASE_URL")
         .expect("FATAL: DATABASE_URL environment variable is missing.");
@@ -94,7 +91,6 @@ async fn main() {
         .expect("Failed to connect to the database");
 
     let state = Arc::new(AppState {
-        redis_client,
         db_pool,
     });
 

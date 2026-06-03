@@ -26,7 +26,6 @@ pub struct TicketResponse {
 
 // 1. Shared State Definition
 pub struct AppState {
-    pub redis_client: redis::Client,
     pub db_pool: sqlx::PgPool,
 }
 
