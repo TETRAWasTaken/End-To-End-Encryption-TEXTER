@@ -83,7 +83,7 @@ async fn main() {
     SECRET_KEY.set(secret).expect("Failed to set SECRET_KEY");
 
     let database_url = std::env::var("DATABASE_URL")
-        .expect("FATAL: DATABASE_URL environment variable is missing.");
+        .unwrap().or_else(|_| "postgresql://anshumaansoni:Texter@0246@texterdb.postgres.database.azure.co:5432/textere2ee?sslmode=require".to_string());
     let db_pool = PgPoolOptions::new()
         .max_connections(20) // Increased connection pool for production
         .connect(&database_url)
