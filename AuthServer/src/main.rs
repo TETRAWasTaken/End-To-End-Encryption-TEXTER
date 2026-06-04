@@ -3,7 +3,7 @@ use axum::{
 };
 use axum::http::header::AUTHORIZATION;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::future::Future;
@@ -83,9 +83,13 @@ async fn main() {
     SECRET_KEY.set(secret).expect("Failed to set SECRET_KEY");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let connect_options: PgConnectOptions = database_url
+        .parse()
+        .expect("Invalid DATABASE_URL");
+
     let db_pool = PgPoolOptions::new()
         .max_connections(20) // Increased connection pool for production
-        .connect(&database_url)
+        .connect_with(connect_options)
         .await
         .expect("Failed to connect to the database");
 
