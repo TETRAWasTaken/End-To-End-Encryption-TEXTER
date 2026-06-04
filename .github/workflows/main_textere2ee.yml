@@ -63,8 +63,10 @@ jobs:
 
           # ---> 5. Download Caddy Web Server <---
           echo "Downloading Caddy Web Server..."
-          wget -qO caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
+          wget -qO caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz"
+          tar -xzf caddy.tar.gz caddy
           chmod +x caddy
+          rm caddy.tar.gz
 
           # ---> 6. Generate Caddyfile <---
           echo "Generating Caddyfile..."
