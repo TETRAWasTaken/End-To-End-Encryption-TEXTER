@@ -82,8 +82,7 @@ async fn main() {
         });
     SECRET_KEY.set(secret).expect("Failed to set SECRET_KEY");
 
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://anshumaansoni:Texter%400246@texterdb.postgres.database.azure.co:5432/textere2ee?sslmode=require".to_string());
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let db_pool = PgPoolOptions::new()
         .max_connections(20) // Increased connection pool for production
         .connect(&database_url)
