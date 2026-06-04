@@ -1,4 +1,4 @@
-curl -i -X POST http://127.0.0.1:3000/api/auth/register \
+curl -i -X POST textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net:8080/api/auth/register \
 -H "Content-Type: application/json" \
 -d '{
   "username": "test_user_1",
@@ -15,7 +15,7 @@ curl -i -X POST http://127.0.0.1:3000/api/auth/register \
   }
 }'
 
-access_key=$(curl -s -X POST http://127.0.0.1:3000/api/auth/login \
+access_key=$(curl -s -X POST textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net:8080/api/auth/login \
 -H "Content-Type: application/json" \
 -d '{
   "username": "test_user_1",
@@ -24,5 +24,5 @@ access_key=$(curl -s -X POST http://127.0.0.1:3000/api/auth/login \
 
 echo "Access Key: $access_key"
 
-curl -i -X POST http://127.0.0.1:3000/api/auth/ws_ticket \
+curl -i -X POST textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net:8080/api/auth/ws_ticket \
 -H "Authorization: Bearer $access_key"
