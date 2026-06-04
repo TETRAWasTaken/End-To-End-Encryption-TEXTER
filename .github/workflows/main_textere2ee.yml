@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     permissions:
       contents: read
 
@@ -18,22 +18,20 @@ jobs:
           python-version: '3.12'
 
       # ----------------------------------------------------------------
-      # 🧹 CLEANUP STEP (Since files are already at root)
+      # 🧹 CLEANUP & BUILD STEP
       # ----------------------------------------------------------------
       - name: Prepare Server Build
         run: |
           echo "Files at root before cleanup:"
           ls -la
 
-          # 1. Remove Client Code & Legacy Files (to keep server light)
+          # 1. Remove Client Code & Legacy Files
           echo "Removing Client folders..."
           rm -rf Client
           rm -rf "Legacy Server"
           rm -f run_client.py
 
           # 2. Generate Server-Only Requirements
-          # Since your repo's requirements.txt has Client libs (PySide6), 
-          # we overwrite it with ONLY the server dependencies.
           echo "Generating server-only requirements.txt..."
           cat > requirements.txt <<EOF
           uvicorn==0.38.0
@@ -50,20 +48,48 @@ jobs:
           echo "Building Rust Auth Server..."
           cd AuthServer
           cargo build --release
-          # Find the compiled binary and copy it to the root
           EXEC_NAME=$(find target/release -maxdepth 1 -type f -executable -not -name "*.so" -not -name "*.d" | head -n 1)
           cp "$EXEC_NAME" ../auth_server_bin
           cd ..
 
-          # 4. Create Startup Script
+          # ---> 4. Download Caddy Web Server <---
+          echo "Downloading Caddy Web Server..."
+          wget -qO caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
+          chmod +x caddy
+
+          # ---> 5. Generate Caddyfile <---
+          echo "Generating Caddyfile..."
+          cat > Caddyfile <<'EOF'
+          :8000 {
+              # Route Authentication HTTP traffic to the Rust server
+              handle /api/auth/* {
+                  reverse_proxy 127.0.0.1:8001
+              }
+
+              # Route WebSocket Chat traffic to the Python server
+              handle /ws* {
+                  reverse_proxy 127.0.0.1:8002
+              }
+
+              # Catch-all for debugging
+              respond "TEXTER API Gateway is active" 404
+          }
+          EOF
+
+          # ---> 6. Create Startup Script (Modified for Caddy) <---
           echo "Generating startup.sh..."
           cat > startup.sh <<'EOF'
           #!/bin/bash
-          echo "Starting Auth Server in the background on port 8080..."
-          PORT=8080 ./auth_server_bin &
+          echo "Starting TEXTER Microservices Architecture..."
           
-          echo "Starting Python WebSocket Server..."
-          python -m uvicorn Server.secure_asgi_server:app --host 0.0.0.0 --port ${WEBSITES_PORT:-8000}
+          echo "Starting Rust Auth Server in the background on port 8001..."
+          PORT=8001 ./auth_server_bin &
+          
+          echo "Starting Python WebSocket Server in the background on port 8002..."
+          python -m uvicorn Server.secure_asgi_server:app --host 127.0.0.1 --port 8002 &
+
+          echo "Starting Caddy API Gateway in the foreground on port 8000..."
+          ./caddy run --config Caddyfile
           EOF
           chmod +x startup.sh
 
@@ -86,6 +112,7 @@ jobs:
             !antenv/
             !.git/
             !.github/
+            !AuthServer/target/
 
   deploy:
     runs-on: ubuntu-latest

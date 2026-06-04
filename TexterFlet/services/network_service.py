@@ -8,19 +8,26 @@ import websockets
 
 
 class NetworkService:
-    def __init__(self, auth_url=None, ws_uri="textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"):
+    def __init__(self, use_local=False):
         self.callbacks = {
             'on_connected': [],
             'on_disconnected': [],
             'on_reconnecting': [],
             'on_message_received': [],
-            'on_error_occurred': []
+            'on_error_occurred': [],
+            'on_auth_failed': []
         }
 
         self._should_reconnect = None
         self.websocket = None
-        self.ws_uri = 'wss://' + ws_uri if not ws_uri.startswith('wss://') else ws_uri
-        self.auth_url = auth_url 
+
+        if use_local:
+            ws_uri = "ws://127.0.0.1:8000"
+            auth_url = "http://127.0.0.1:8000"
+        else:
+            ws_uri = "wss://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
+            auth_url = "https://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
+
         self._create_ssl_context()
 
         self.loop = None
@@ -28,7 +35,6 @@ class NetworkService:
         self._shutdown_event = threading.Event()
         self._loop_started = threading.Event()
         self.session_token = None
-
         self._connected = False
 
     @property
@@ -105,7 +111,7 @@ class NetworkService:
                     )
                 
                 if resp.status_code != 200:
-                    self._dispatch('on_error_occurred', "Invalid or Expired Token. Please log in again.")
+                    self._dispatch('on_auth_failed')
                     self._should_reconnect = False
                     break
                 

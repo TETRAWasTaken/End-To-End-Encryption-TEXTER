@@ -17,3 +17,4 @@ database.ini
 nuitka-packaging
 /TexterFlet/build/
 /AuthServer/target/
+/Proxy/target/

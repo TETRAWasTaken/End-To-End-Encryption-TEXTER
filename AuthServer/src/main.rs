@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router, extract::{FromRequestParts, State}, http::{StatusCode, request::Parts}, routing::post
+    Json, Router, extract::{FromRequestParts}, http::{StatusCode, request::Parts}, routing::post
 };
 use axum::http::header::AUTHORIZATION;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -101,7 +101,7 @@ async fn main() {
         .with_state(state);
 
     // Bind to 0.0.0.0 so Azure can route external traffic to this container/app
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8001".to_string());
     let bind_addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await

@@ -82,6 +82,8 @@ class AppController:
 
     async def _startup_async(self):
         saved_session = await self._load_saved_session()
+        self.network.start()
+
         if saved_session:
             saved_token, saved_username = saved_session
             print(f"Found saved session for {saved_username}")
@@ -92,8 +94,10 @@ class AppController:
             self.crypt_services = CryptServices(saved_username)
             self.crypt_services.load_database_without_password()
 
-        self.network.start()
-        self.network.connect()
+            self.network.connect()
+        else:
+            self.update_ui("ENABLE_LOGIN")
+            self.set_status("Ready. Please log in or register.", "info")
 
     def handle_lifecycle_change(self, state: str):
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
@@ -109,6 +113,7 @@ class AppController:
         self.network.bind('on_message_received', self.handle_network_message)
         self.network.bind('on_error_occurred', self.on_network_error)
         self.network.bind('on_reconnecting', self.on_network_reconnecting)
+        self.network.bind('on_auth_failed', self.logout)
 
     def on_network_connected(self):
         # If we have a token (auto-login), use it.
@@ -386,6 +391,8 @@ class AppController:
 
         # 4. Switch to login screen
         self.update_ui("SWITCH_TO_LOGIN")
+        self.update_ui("ENABLE_LOGIN")
+        self.set_status("Logged out successfully", "info")
 
         # 5. FIX: Immediately start a NEW connection so "on_connected" fires
         # and enables the Login/Register buttons.
