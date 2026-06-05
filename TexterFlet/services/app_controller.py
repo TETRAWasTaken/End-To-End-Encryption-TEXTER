@@ -212,7 +212,14 @@ class AppController:
                 )
 
             if resp.status_code == 200:
-                token = resp.json().get("session_token")
+                resp_json = resp.json()
+                token = resp_json.get("access_token")
+                
+                if not token:
+                    self.set_status("Login failed: Received empty token from server", "error")
+                    self.update_ui("ENABLE_LOGIN")
+                    return
+
                 self.network.set_session_token(token)
                 await self._save_session_to_storage(token, username)
                 self.set_status("Authentication successful, connecting to server...", "info")

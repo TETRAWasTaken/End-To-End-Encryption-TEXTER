@@ -102,6 +102,7 @@ class NetworkService:
         while self._should_reconnect:
             if not self.session_token:
                 self._dispatch('on_error_occurred', "Cannot connect: No session token.")
+                self._should_reconnect = False
                 break
 
             try:
