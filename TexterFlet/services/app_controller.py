@@ -12,7 +12,7 @@ from services.crypt_services import CryptServices
 
 
 class AppController:
-    def __init__(self, page, page_update_callback, status_callback):
+    def __init__(self, page, page_update_callback, status_callback, use_local=True):
         self.page = page
         self.update_ui = page_update_callback
         self.set_status = status_callback
@@ -22,7 +22,7 @@ class AppController:
         self.pending_messages = {}
         self.current_partner = None
 
-        self.network = NetworkService()
+        self.network = NetworkService(use_local)
         self.crypt_services = None
 
         self._temp_register_username = None
