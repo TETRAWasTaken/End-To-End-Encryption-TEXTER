@@ -12,7 +12,7 @@ from services.crypt_services import CryptServices
 
 
 class AppController:
-    def __init__(self, page, page_update_callback, status_callback, use_local=True):
+    def __init__(self, page, page_update_callback, status_callback, use_local=False):
         self.page = page
         self.update_ui = page_update_callback
         self.set_status = status_callback
