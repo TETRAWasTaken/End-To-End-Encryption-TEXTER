@@ -3,11 +3,10 @@ use axum::{
 };
 use axum::http::header::AUTHORIZATION;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::future::Future;
-use uuid::Uuid;
 
 mod types;
 mod login_handler;
@@ -34,7 +33,10 @@ where
             let auth_header = auth_header
                 .and_then(|value| value.to_str().ok().map(str::to_owned))
                 .filter(|value| value.starts_with("Bearer "))
-                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid token"))?;
+                .ok_or_else(|| {
+                    eprintln!("Missing or invalid authorization header");
+                    (StatusCode::UNAUTHORIZED, "Missing or invalid token")
+                })?;
 
             let token = auth_header.trim_start_matches("Bearer ");
 
@@ -42,7 +44,10 @@ where
                 token,
                 &DecodingKey::from_secret(SECRET_KEY.get().expect("SECRET_KEY must be initialized").as_bytes()),
                 &Validation::default(),
-            ).map_err(|_| (StatusCode::UNAUTHORIZED, "Token expired or invalid"))?;
+            ).map_err(|e| {
+                eprintln!("Token validation/decode error: {}", e);
+                (StatusCode::UNAUTHORIZED, "Token expired or invalid")
+            })?;
 
             Ok(token_data.claims)
         }
@@ -67,8 +72,12 @@ pub async fn ws_ticket_handler(
         &Header::default(),
         &ticket_claims,
         &EncodingKey::from_secret(SECRET_KEY.get().expect("SECRET_KEY must be initialized").as_bytes())
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create ticket: {}", e)))?;
+    ).map_err(|e| {
+        eprintln!("Failed to encode ticket JWT for user {}: {}", claims.sub, e);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create ticket: {}", e))
+    })?;
 
+    println!("WS ticket successfully issued for user: {}", claims.sub);
     Ok(Json(TicketResponse { ticket: ticket_jwt }))
 }
 
@@ -77,17 +86,27 @@ async fn main() {
     // Check for environment variable, otherwise generate an ephemeral random key
     let secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| {
-            println!("WARNING: JWT_SECRET not found in environment. Generating a temporary random key. All users will be logged out on server restart.");
-            format!("{}{}", Uuid::new_v4(), Uuid::new_v4())
+            println!("WARNING: JWT_SECRET not found in environment. Using default key.");
+            "anshumaan-soni".to_string()
         });
     SECRET_KEY.set(secret).expect("Failed to set SECRET_KEY");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let db_pool = PgPoolOptions::new()
+    let connect_options: PgConnectOptions = database_url
+        .parse()
+        .expect("Invalid DATABASE_URL");
+
+    let db_pool = match PgPoolOptions::new()
         .max_connections(20) // Increased connection pool for production
-        .connect(&database_url)
+        .connect_with(connect_options)
         .await
-        .expect("Failed to connect to the database");
+    {
+        Ok(pool) => {
+            println!("Successfully connected to the database.");
+            pool
+        }
+        Err(e) => panic!("Failed to connect to the database: {:?}", e),
+    };
 
     let state = Arc::new(AppState {
         db_pool,
@@ -102,11 +121,17 @@ async fn main() {
     // Bind to 0.0.0.0 so Azure can route external traffic to this container/app
     let port = std::env::var("PORT").unwrap_or_else(|_| "8001".to_string());
     let bind_addr = format!("0.0.0.0:{}", port);
-    let listener = tokio::net::TcpListener::bind(&bind_addr)
-        .await
-        .unwrap();
+    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+        Ok(l) => {
+            println!("Auth Server successfully bound to {}", bind_addr);
+            l
+        }
+        Err(e) => panic!("Failed to bind to {}: {:?}", bind_addr, e),
+    };
 
     println!("Auth Server running on http://{}", bind_addr);
-    axum::serve(listener, app).await.unwrap();
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("Server encountered a fatal error: {:?}", e);
+    }
 
 }

@@ -61,7 +61,11 @@ class DB_connect:
                     user=os.environ.get("DB_USER"),
                     password=os.environ.get("DB_PASSWORD"),
                     port=os.environ.get("DB_PORT", "5432"),
-                    sslmode="require"
+                    sslmode="require",
+                    keepalives=1,
+                    keepalives_idle=120,
+                    keepalives_interval=10,
+                    keepalives_count=5
                 )
             else:
                 print("Connecting using database.ini...")

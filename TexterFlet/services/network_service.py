@@ -22,11 +22,11 @@ class NetworkService:
         self.websocket = None
 
         if use_local:
-            ws_uri = "ws://127.0.0.1:8000"
-            auth_url = "http://127.0.0.1:8000"
+            self.ws_uri = "ws://192.168.1.150:8000/ws"
+            self.auth_url = "http://192.168.1.150:8000"
         else:
-            ws_uri = "wss://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
-            auth_url = "https://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
+            self.ws_uri = "wss://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net/ws"
+            self.auth_url = "https://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
 
         self._create_ssl_context()
 
@@ -94,12 +94,15 @@ class NetworkService:
                     self.ssl_context = ssl.create_default_context()
             except:
                 self.ssl_context = ssl.create_default_context()
+        else:
+            self.ssl_context = None
 
     async def _connection_manager(self):
         self._should_reconnect = True
         while self._should_reconnect:
             if not self.session_token:
                 self._dispatch('on_error_occurred', "Cannot connect: No session token.")
+                self._should_reconnect = False
                 break
 
             try:

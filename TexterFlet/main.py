@@ -186,7 +186,7 @@ def main(page: ft.Page):
                     content=ft.Row([
                         ft.Row([
                             ft.Icon(ft.Icons.PERSON_ADD, color=COLORS["accent"]),
-                            ft.Text(str(data) if data else "", expand=True, color=COLORS["text_primary"], size=16),
+                            ft.Text(str(data) if data else "", color=COLORS["text_primary"], size=16),
                         ]),
                         ft.Button("Accept",
                                   on_click=lambda e, u=data: (controller.accept_friend_request(u) if controller else handle_status("App not ready", "error")),
@@ -228,7 +228,7 @@ def main(page: ft.Page):
                     content=ft.Row([
                         ft.Row([
                             ft.Icon(ft.Icons.OUTBOUND_OUTLINED, color=ft.Colors.GREY_400, size=20),
-                            ft.Text(str(data) if data else "", expand=True, color=COLORS["text_primary"], size=16),
+                            ft.Text(str(data) if data else "", color=COLORS["text_primary"], size=16),
                         ]),
                         ft.Container(
                             content=ft.Text("Pending", size=12, color=ft.Colors.YELLOW_600),

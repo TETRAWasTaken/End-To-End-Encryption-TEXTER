@@ -91,12 +91,15 @@ class StorageManager:
             conn.commit()
             return True
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error : {e} while inserting new user")
             return False
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
 
     def SaveKeyBundle(self, KeyBundle: dict, user_id: str) -> bool:
         """
@@ -152,12 +155,15 @@ class StorageManager:
             conn.commit()
             return True
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error : {e} while saving KeyBundle")
             return False
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
 
     def LoadKeyBundle(self, user_id: str) -> Dict:
         """
@@ -177,13 +183,13 @@ class StorageManager:
             cur = conn.cursor()
             cur.execute("Select identity_key, identity_key_dh from identity_key where user_id = %s", (user_id,))
             identity_key_row = cur.fetchone()
-            if not identity_key_row: return {}
+            if not identity_key_row:
+                return {}
             
             identity_key, identity_key_dh = identity_key_row
             cur.execute("SELECT signed_pre_key, signature FROM signed_key WHERE user_id = %s ORDER BY time_stamp_creation DESC LIMIT 1", (user_id,))
             row = cur.fetchone()
             if not row:
-                conn.rollback()
                 return {}
             signed_pre_key, signature = row
 
@@ -204,12 +210,15 @@ class StorageManager:
                 "one_time_key_id": one_time_key_id, 
             }
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error : {e} while loading KeyBundle")
             return {}
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
 
     def DeleteKeyBundle(self, user_id: str) -> None:
         """
@@ -228,11 +237,14 @@ class StorageManager:
             cur.execute("Delete from onetime_pre_key where user_id = %s", (user_id,))
             conn.commit()
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error : {e} while deleting KeyBundle")
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
 
     def CheckFriendsStatus(self, user_one_id: str, user_two_id: str) -> bool:
         """
@@ -273,23 +285,29 @@ class StorageManager:
         conn = None
         cur = None
         try:
-            if from_user_id == to_user_id: return False
+            if from_user_id == to_user_id:
+                return False
             conn = self.DB.pool.getconn()
             cur = conn.cursor()
             cur.execute("SELECT EXISTS (SELECT 1 FROM User_Info WHERE user_id = %s)", (to_user_id,))
-            if not cur.fetchone()[0]: return False
+            if not cur.fetchone()[0]:
+                return False
             cur.execute("SELECT 1 FROM friends WHERE (user_one_id = %s AND user_two_id = %s) OR (user_one_id = %s AND user_two_id = %s)", (from_user_id, to_user_id, to_user_id, from_user_id))
-            if cur.fetchone(): return False
+            if cur.fetchone():
+                return False
             cur.execute("INSERT INTO friends (user_one_id, user_two_id, status) VALUES (%s, %s, 'pending')", (from_user_id, to_user_id))
             conn.commit()
             return True
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error in CreateFriendRequest: {e}")
             return False
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)
 
     def GetPendingFriendRequests(self, user_id: str) -> List[str]:
         """
@@ -335,9 +353,12 @@ class StorageManager:
             conn.commit()
             return cur.rowcount > 0
         except Exception as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             print(f"Error in AcceptFriendRequest: {e}")
             return False
         finally:
-            if cur: cur.close()
-            if conn: self.DB.pool.putconn(conn)
+            if cur:
+                cur.close()
+            if conn:
+                self.DB.pool.putconn(conn)

@@ -12,7 +12,7 @@ from services.crypt_services import CryptServices
 
 
 class AppController:
-    def __init__(self, page, page_update_callback, status_callback):
+    def __init__(self, page, page_update_callback, status_callback, use_local=False):
         self.page = page
         self.update_ui = page_update_callback
         self.set_status = status_callback
@@ -22,7 +22,7 @@ class AppController:
         self.pending_messages = {}
         self.current_partner = None
 
-        self.network = NetworkService()
+        self.network = NetworkService(use_local)
         self.crypt_services = None
 
         self._temp_register_username = None
@@ -103,7 +103,7 @@ class AppController:
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
         print(f"App lifecycle changed: {state}")
         if state == "resumed":
-            if not self.network.is_connected:
+            if not self.network.is_connected and self.network.session_token:
                 self.set_status("App resumed, reconnecting...", "info")
                 self.network.connect()
 
@@ -119,18 +119,20 @@ class AppController:
         # If we have a token (auto-login), use it.
         # If NOT (logout state), enable the buttons.
         if self.network.session_token:
-            self.set_status(f"Resuming session as {self.username}...", "info")
+            self.on_login_success()
         else:
             self.update_ui("ENABLE_LOGIN")
 
     def on_network_disconnected(self):
         self.set_status("Disconnected", "error")
+        self.update_ui("ENABLE_LOGIN")
 
     def on_network_reconnecting(self):
         self.set_status("Reconnecting...", "info")
 
     def on_network_error(self, error):
         self.set_status(f"Net Error: {error}", "error")
+        self.update_ui("ENABLE_LOGIN")
 
     def handle_network_message(self, payload):
         try:
@@ -181,6 +183,18 @@ class AppController:
                             self._temp_register_password
                         )
                     )
+                    
+            elif status == "friend_request_status":
+                if message == "sent":
+                    self.set_status("Friend request sent successfully!", "success")
+                elif message == "failed":
+                    self.set_status("Failed to send request. User may not exist or already requested.", "error")
+                elif message == "error":
+                    self.set_status("An error occurred while sending the friend request.", "error")
+                    
+            elif status == "friend_request_accepted_status":
+                if message == "failed" or message == "error":
+                    self.set_status("Failed to accept friend request.", "error")
 
         except Exception as e:
             err_msg = f"Logic Error: {str(e)}"
@@ -210,11 +224,18 @@ class AppController:
                 )
 
             if resp.status_code == 200:
-                token = resp.json().get("session_token")
+                resp_json = resp.json()
+                token = resp_json.get("access_token")
+                
+                if not token:
+                    self.set_status("Login failed: Received empty token from server", "error")
+                    self.update_ui("ENABLE_LOGIN")
+                    return
+
                 self.network.set_session_token(token)
                 await self._save_session_to_storage(token, username)
+                self.set_status("Authentication successful, connecting to server...", "info")
                 self.network.connect() 
-                self.on_login_success()
             else:
                 self.set_status("Login failed: Invalid credentials", "error")
                 self.update_ui("ENABLE_LOGIN")
@@ -358,7 +379,8 @@ class AppController:
                         self.set_status(f"New message from {partner}", "success")
 
     def send_friend_request(self, friend_username):
-        if friend_username:
+        if friend_username and friend_username.strip():
+            friend_username = friend_username.strip()
             self.update_ui("ADD_SENT_REQUEST", friend_username)
             self.network.send_payload(json.dumps({
                 "command": "friend_request",
@@ -393,7 +415,3 @@ class AppController:
         self.update_ui("SWITCH_TO_LOGIN")
         self.update_ui("ENABLE_LOGIN")
         self.set_status("Logged out successfully", "info")
-
-        # 5. FIX: Immediately start a NEW connection so "on_connected" fires
-        # and enables the Login/Register buttons.
-        self.network.connect()
