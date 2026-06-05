@@ -8,7 +8,7 @@ import websockets
 
 
 class NetworkService:
-    def __init__(self, use_local):
+    def __init__(self, use_local=False):
         self.callbacks = {
             'on_connected': [],
             'on_disconnected': [],
@@ -22,10 +22,10 @@ class NetworkService:
         self.websocket = None
 
         if use_local:
-            self.ws_uri = "ws://192.168.1.150:8000"
-            self.auth_url = "http://192.168.1.150:8000"
+            self.ws_uri = "ws://127.0.0.1:8000/ws"
+            self.auth_url = "http://127.0.0.1:8000"
         else:
-            self.ws_uri = "wss://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
+            self.ws_uri = "wss://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net/ws"
             self.auth_url = "https://textere2ee-hvbahvb0gzfrf4bb.centralindia-01.azurewebsites.net"
 
         self._create_ssl_context()
