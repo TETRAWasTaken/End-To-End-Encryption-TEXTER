@@ -7,7 +7,6 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::future::Future;
-use uuid::Uuid;
 
 mod types;
 mod login_handler;

@@ -103,7 +103,7 @@ class AppController:
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
         print(f"App lifecycle changed: {state}")
         if state == "resumed":
-            if not self.network.is_connected:
+            if not self.network.is_connected and self.network.session_token:
                 self.set_status("App resumed, reconnecting...", "info")
                 self.network.connect()
 
@@ -393,7 +393,3 @@ class AppController:
         self.update_ui("SWITCH_TO_LOGIN")
         self.update_ui("ENABLE_LOGIN")
         self.set_status("Logged out successfully", "info")
-
-        # 5. FIX: Immediately start a NEW connection so "on_connected" fires
-        # and enables the Login/Register buttons.
-        self.network.connect()
