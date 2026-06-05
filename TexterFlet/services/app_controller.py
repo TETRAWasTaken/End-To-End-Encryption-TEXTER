@@ -119,18 +119,20 @@ class AppController:
         # If we have a token (auto-login), use it.
         # If NOT (logout state), enable the buttons.
         if self.network.session_token:
-            self.set_status(f"Resuming session as {self.username}...", "info")
+            self.on_login_success()
         else:
             self.update_ui("ENABLE_LOGIN")
 
     def on_network_disconnected(self):
         self.set_status("Disconnected", "error")
+        self.update_ui("ENABLE_LOGIN")
 
     def on_network_reconnecting(self):
         self.set_status("Reconnecting...", "info")
 
     def on_network_error(self, error):
         self.set_status(f"Net Error: {error}", "error")
+        self.update_ui("ENABLE_LOGIN")
 
     def handle_network_message(self, payload):
         try:
@@ -213,8 +215,8 @@ class AppController:
                 token = resp.json().get("session_token")
                 self.network.set_session_token(token)
                 await self._save_session_to_storage(token, username)
+                self.set_status("Authentication successful, connecting to server...", "info")
                 self.network.connect() 
-                self.on_login_success()
             else:
                 self.set_status("Login failed: Invalid credentials", "error")
                 self.update_ui("ENABLE_LOGIN")

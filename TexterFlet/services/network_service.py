@@ -94,6 +94,8 @@ class NetworkService:
                     self.ssl_context = ssl.create_default_context()
             except:
                 self.ssl_context = ssl.create_default_context()
+        else:
+            self.ssl_context = None
 
     async def _connection_manager(self):
         self._should_reconnect = True
