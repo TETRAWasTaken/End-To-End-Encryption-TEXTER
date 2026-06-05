@@ -19,3 +19,5 @@ nuitka-packaging
 /TexterFlet/build/
 /AuthServer/target/
 /Proxy/target/
+/Terminal/startup.sh
+/Terminal/stop.sh
