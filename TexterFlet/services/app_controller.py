@@ -183,6 +183,18 @@ class AppController:
                             self._temp_register_password
                         )
                     )
+                    
+            elif status == "friend_request_status":
+                if message == "sent":
+                    self.set_status("Friend request sent successfully!", "success")
+                elif message == "failed":
+                    self.set_status("Failed to send request. User may not exist or already requested.", "error")
+                elif message == "error":
+                    self.set_status("An error occurred while sending the friend request.", "error")
+                    
+            elif status == "friend_request_accepted_status":
+                if message == "failed" or message == "error":
+                    self.set_status("Failed to accept friend request.", "error")
 
         except Exception as e:
             err_msg = f"Logic Error: {str(e)}"
@@ -367,7 +379,8 @@ class AppController:
                         self.set_status(f"New message from {partner}", "success")
 
     def send_friend_request(self, friend_username):
-        if friend_username:
+        if friend_username and friend_username.strip():
+            friend_username = friend_username.strip()
             self.update_ui("ADD_SENT_REQUEST", friend_username)
             self.network.send_payload(json.dumps({
                 "command": "friend_request",
