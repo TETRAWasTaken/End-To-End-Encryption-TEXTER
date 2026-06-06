@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
 
       # ----------------------------------------------------------------
-      # 🧹 CLEANUP & BUILD STEP
+      # CLEANUP & BUILD STEP
       # ----------------------------------------------------------------
       - name: Prepare Server Build
         run: |
@@ -107,7 +107,7 @@ jobs:
           echo "--- Final Deployment Package ---"
           ls -la
 
-      # 🛠️ Optional: Install dependencies to verify they work
+      # Optional: Install dependencies to verify they work
       - name: Verify Server Dependencies
         run: |
           python -m venv antenv

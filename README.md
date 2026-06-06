@@ -1,117 +1,100 @@
-# End-To-End Encryption TEXTER
+# Overview
 
-A secure messaging application with end-to-end encryption using X3DH and Double Ratchet protocols.
+TEXTER is a high-performance, secure messaging platform engineered from the ground up to protect user privacy. Utilizing the industry-standard Signal Protocol, TEXTER ensures that all communications are end-to-end encrypted. The architecture is split into a highly concurrent Rust authentication server, a Python ASGI WebSocket messaging server, and a cross-platform Flutter-based client deployed via Flet.
 
----
+## Key Features
 
-## ⚠️ IMPORTANT WARNINGS
+- **End-to-End Encryption (E2EE):** Fully implements the Extended Triple Diffie-Hellman (X3DH) key agreement protocol and the Double Ratchet algorithm for perfect forward secrecy and post-compromise security.
 
-**YOU ARE SOLELY RESPONSIBLE** for how you use this software. The developers bear **NO RESPONSIBILITY** for illegal activities or misuse.
+- **Cross-Platform Client:** Beautiful, responsive frontend built with Flet, supporting Windows, macOS, Linux, and Android seamlessly.
 
-### Critical Notices
+- **High-Performance Authentication:** A dedicated Rust-based authentication microservice ensuring rapid, secure logins and registrations.
 
-- **PROVIDED "AS IS"**: No warranty. Use at your own risk.
-- **DEVELOPMENT STATUS**: Still in active development. May contain bugs or vulnerabilities. Do not use for critical security applications without thorough auditing.
-- **PRIVACY**: Message content is encrypted end-to-end. Metadata (who communicates with whom, when) may be observable by server operators or network monitors.
-- **NO SYSTEM IS 100% SECURE**: No encryption system is perfect.
-- **LEGAL COMPLIANCE**: You must comply with all applicable laws in your jurisdiction.
+- **Real-Time Communication:** Python ASGI WebSocket server for instant message delivery and caching.
 
----
+- **Cloud-Ready:** Designed with deployment in mind, featuring GitHub Action workflows ready for cloud deployment to Azure and other providers.
 
-## 🔒 Security Features
+## Architecture
 
-- **X3DH Protocol**: Secure key exchange
-- **Double Ratchet**: Forward secrecy and break-in recovery
-- **Curve25519**: Elliptic curve cryptography
-- **AES-GCM**: Message encryption
-- **Server Cannot Read Messages**: Server only routes encrypted data
-- **SSL/TLS**: Transport layer security
+TEXTER's modular architecture separates concerns to maximize security and performance:
 
-### Best Practices
+- **`AuthServer/` (Rust):** Handles user registration, login, and identity verification safely and quickly.
 
-- Use strong, unique passwords
-- Keep software updated
-- Protect your device (private keys stored locally)
-- Verify server identity before connecting
-- Report security vulnerabilities responsibly
+- **`Server/` (Python/ASGI):** The core messaging broker handling secure WebSocket connections, message routing, and caching.
 
----
+- **`TexterFlet/` (Python/Flet):** The client application housing the UI, local SQLite database, and cryptographic operations (`crypt_services.py`, `x3dh.py`, `double_ratchet.py`).
 
-## 📋 Quick Start
+- **`database/`:** Shared schemas and initialization scripts for key storage and user data.
+
+## Getting Started
 
 ### Prerequisites
 
-- Python 3.8+
-- PostgreSQL 12+
-- OpenSSL (for SSL certificates)
+- Python 3.10+
+- Rust & Cargo
 
-### Installation
+### 1. Clone the Repository
 
 ```bash
-# Clone repository
-git clone https://github.com/TETRAWasTaken/End-To-End-Encryption-TEXTER.git
-cd End-To-End-Encryption-TEXTER
+git clone https://github.com/tetrawastaken/end-to-end-encryption-texter.git
+cd end-to-end-encryption-texter
+```
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+### 2. Run the Auth Server (Rust)
 
-# Install dependencies
+```bash
+cd AuthServer
+cargo build --release
+cargo run
+```
+
+### 3. Run the Messaging Server (Python)
+
+Open a new terminal in the project root:
+
+```bash
+pip install -r requirements-server.txt
+cd Server
+python secure_asgi_server.py
+```
+
+### 4. Launch the Client (Flet)
+
+Open a new terminal in the project root:
+
+```bash
+cd TexterFlet
 pip install -r requirements.txt
-
-# Set up PostgreSQL database
-sudo -u postgres psql
-CREATE DATABASE texter_db;
-CREATE USER texter_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE texter_db TO texter_user;
-\q
-
-# Generate SSL certificate (for development)
-openssl req -newkey rsa:2048 -nodes -keyout server.key -x509 -days 365 -out server.crt
+flet run main.py
 ```
 
-⚠️ **For production**: Use certificates from a trusted CA (e.g., Let's Encrypt)
+## 🛠️ Deployment
 
-### Configuration
+GitHub Actions workflows are included in `.github/workflows/` for automated packaging:
 
-- Update database credentials in `database/DB_connect.py`
-- Default server binds to `::1` (IPv6 localhost). Modify `Server/secure_asgi_server.py` for external access.
+- **`windows_client.yml`**: Compiles the Flet app into a standalone Windows executable.
+- **`android_pkg.yml`**: Builds the Android APK.
+- **`main_textere2ee.yml`**: CI/CD pipeline for server-side cloud deployment.
 
-### Usage
+## 🤝 Contributing
 
-**Start Server:**
-```bash
-uvicorn Server.secure_asgi_server:app --host :: --port 8000
-```
+Contributions make the open-source community an amazing place to learn, inspire, and create. Any contributions you make are greatly appreciated.
 
-**Start Client (in new terminal):**
-```bash
-python TEXTERE2EE.py
-```
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
----
+Please ensure you review our CODE_OF_CONDUCT.md before participating.
 
-## 🐛 Common Issues
+## 📝 License
 
-**SSL Certificate Errors**: Ensure `server.crt` and `server.key` exist. Self-signed certificates require manual trust.
+Distributed under the appropriate open-source license. See the LICENSE file for more information.
 
-**Database Connection**: Verify PostgreSQL is running and credentials are correct.
+## 📬 Contact & Author
 
-**IPv6 Issues**: Check IPv6 support with `ping6 ::1`. Some networks require IPv4 (code modification needed).
+**Anshumaan Soni**
+- **Project Link:** https://github.com/tetrawastaken/end-to-end-encryption-texter
 
-**Network Access**: Open firewall port (e.g., `sudo ufw allow 8000`). Use public IPv6 address for external connections.
-
-**Import Errors**: Ensure virtual environment is activated and dependencies are installed.
-
----
-
-## 📞 Contact
-
-- **GitHub Issues**: [Report bugs](https://github.com/TETRAWasTaken/End-To-End-Encryption-TEXTER/issues)
-- **Maintainer**: TETRAWasTaken
-
----
-
-## ⚖️ Legal Reminder
-
-**Use for legitimate privacy purposes only. You accept full responsibility for your actions. Illegal activity is YOUR accountability. Developers accept no liability for misuse.**
+*Built with 💙 for privacy and secure communication.*
