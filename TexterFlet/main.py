@@ -166,6 +166,10 @@ def main(page: ft.Page):
         elif action == "SWITCH_TO_LOGIN":
             navigate_to_route("/login")
 
+        elif action == "SHOW_ACCOUNT_SELECTOR":
+            page.session.store.set("available_accounts", data) 
+            navigate_to_route("/select_account")
+
         elif action == "ADD_CONTACT":
             exists = any(c.data == data for c in contacts_view.controls)
             if not exists:
@@ -262,8 +266,7 @@ def main(page: ft.Page):
                 page.update()
             except:
                 pass
-        # ----------------------------------
-
+            
         elif action == "LOAD_HISTORY":
             if data:
                 history, my_username = data
@@ -283,6 +286,17 @@ def main(page: ft.Page):
                 sender, text = data
                 is_me = (sender == "Me" or (controller and sender == controller.username))
                 add_message_bubble(text, is_me, update=True)
+        
+        elif action == "CLEAR_UI_STATE":
+            contacts_view.controls.clear()
+            chat_history.controls.clear()
+            requests_view.controls.clear()
+            sent_requests_view.controls.clear()
+            current_chat_name.value = ""
+            try:
+                page.update()
+            except:
+                pass
 
     async def _schedule_ui_update(action, data=None):
         _apply_ui_update(action, data)
@@ -563,6 +577,65 @@ def main(page: ft.Page):
                     bgcolor=COLORS["bg"],
                     padding=0,
                     spacing=0
+                )
+            )
+
+        # --- VIEW 4: SELECT ACCOUNT ---
+        elif page.route == "/select_account":
+            accounts = page.session.store.get("available_accounts") or {}
+            
+            account_list = ft.ListView(spacing=15, padding=20)
+            
+            # Build a clickable tile for every saved session
+            for username, token in accounts.items():
+                account_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.CircleAvatar(
+                                content=ft.Text(username[:1].upper(), weight=ft.FontWeight.BOLD), 
+                                bgcolor=COLORS["accent"], 
+                                radius=25
+                            ),
+                            ft.Text(username, size=18, weight=ft.FontWeight.BOLD, color=COLORS["text_primary"])
+                        ], spacing=15),
+                        padding=15,
+                        bgcolor=COLORS["card"],
+                        border_radius=10,
+                        ink=True,
+                        on_click=lambda e, u=username, t=token: controller.select_account_and_login(u, t) if controller else None
+                    )
+                )
+                
+            page.views.append(
+                ft.View(
+                    route="/select_account",
+                    controls=[
+                        ft.AppBar(
+                            title=ft.Text("Select Account", weight=ft.FontWeight.BOLD),
+                            bgcolor=COLORS["appbar"],
+                            center_title=True
+                        ),
+                        ft.Container(
+                            content=ft.Column([
+                                ft.Text("Who is chatting today?", size=22, weight=ft.FontWeight.BOLD, color=COLORS["text_primary"]),
+                                ft.Text("Choose an account to continue:", size=14, color=COLORS["text_secondary"]),
+                                ft.Divider(height=20, color="transparent"),
+                                account_list,
+                                ft.Divider(height=20, color="transparent"),
+                                ft.OutlinedButton(
+                                    "Log in to a different account", 
+                                    on_click=lambda _: navigate_to_route("/login"),
+                                    style=ft.ButtonStyle(color=COLORS["accent"]),
+                                    width=float("inf")
+                                )
+                            ], alignment=ft.MainAxisAlignment.CENTER),
+                            padding=30,
+                            expand=True,
+                            bgcolor=COLORS["bg"]
+                        )
+                    ],
+                    bgcolor=COLORS["bg"],
+                    padding=0
                 )
             )
         
