@@ -125,14 +125,14 @@ Example `.env.local` values:
 
 ```env
 DATABASE_URL=postgresql://texter_user@localhost:5432/texter_db
-# Password is intentionally omitted here and resolved from .pgpass
+DATABASE_URL=******localhost:5432/texter_db
 JWT_SECRET=replace-with-strong-random-secret
 PORT=8001
 ```
 
 Run `chmod 600 .env.local` after creating the file.
 
-Use `.pgpass` (or your platform equivalent) for database password handling when `DATABASE_URL` does not embed a password. If you prefer embedding credentials, use the full PostgreSQL DSN format with username and password included.
+Use `.pgpass` (or your platform equivalent) only if your local tooling is configured to read it.
 Minimal `.pgpass` example (`~/.pgpass`, permission `0600`):
 
 ```text
@@ -253,7 +253,6 @@ To test local backend:
    - `AppController(page, handle_ui_update, handle_status)`
    - to `AppController(page, handle_ui_update, handle_status, use_local=True)`
    - (the current codebase does not expose an environment variable toggle for this yet)
-3. Optional improvement for contributors: add a runtime config/env toggle for `use_local` to avoid manual source edits during local testing
 
 ---
 
@@ -289,6 +288,10 @@ cd .. && python -m compileall Server database TexterFlet
     ```sql
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
     ```
+
+## Known Limitation
+
+- Local client/back-end switching currently requires a source edit (`use_local=True`) in `TexterFlet/main.py`.
 
 ---
 
