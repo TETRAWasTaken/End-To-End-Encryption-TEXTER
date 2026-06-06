@@ -28,6 +28,7 @@ class AppController:
         self._temp_register_username = None
         self._temp_register_password = None
         self._session_file_path = None
+        self.sessions = None
 
         self.connect_network_signals()
 
@@ -47,57 +48,94 @@ class AppController:
         os.makedirs(app_dir, exist_ok=True)
         self._session_file_path = os.path.join(app_dir, "session.json")
         return self._session_file_path
-
-    async def _load_saved_session(self):
+    
+    async def _load_all_sessions(self):
+        """Loads all stored sessions and migrates old single-user formats."""
         session_file = await self._get_session_file_path()
         if not os.path.exists(session_file):
-            return None
+            return {}
 
         try:
             with open(session_file, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            token = payload.get("session_token")
-            username = payload.get("username")
-            if token and username:
-                return token, username
+            
+            # Migrate old single-session format to multi-session format
+            if "session_token" in payload and "username" in payload:
+                migrated_data = {payload["username"]: payload["session_token"]}
+                # Save the migrated data back to disk immediately
+                with open(session_file, "w", encoding="utf-8") as handle:
+                    json.dump({"sessions": migrated_data}, handle)
+                return migrated_data
+            
+            return payload.get("sessions", {})
         except Exception as e:
-            print(f"Could not load saved session: {e}")
-        return None
+            print(f"Could not load saved sessions: {e}")
+        return {}
 
     async def _save_session_to_storage(self, token: str, username: str):
+        """Appends a new user session to the storage."""
+        sessions = await self._load_all_sessions()
+        sessions[username] = token
         session_file = await self._get_session_file_path()
         try:
             with open(session_file, "w", encoding="utf-8") as handle:
-                json.dump({"session_token": token, "username": username}, handle)
+                json.dump({"sessions": sessions}, handle)
         except Exception as e:
             print(f"Could not save session to storage: {e}")
 
-    async def _clear_session_storage(self):
+    async def _remove_session_from_storage(self):
+        """Removes only the CURRENT user from storage, leaving others intact."""
+        if not self.username:
+            return
+            
+        sessions = await self._load_all_sessions()
+        if self.username in sessions:
+            del sessions[self.username]
+            
         session_file = await self._get_session_file_path()
         try:
-            if os.path.exists(session_file):
-                os.remove(session_file)
+            with open(session_file, "w", encoding="utf-8") as handle:
+                json.dump({"sessions": sessions}, handle)
         except Exception as e:
             print(f"Could not remove session from storage: {e}")
 
     async def _startup_async(self):
-        saved_session = await self._load_saved_session()
+        self.sessions = await self._load_all_sessions()
         self.network.start()
 
-        if saved_session:
-            saved_token, saved_username = saved_session
-            print(f"Found saved session for {saved_username}")
-            self.username = saved_username
-            self.network.set_session_token(saved_token)
-
-            # Initialize crypt services since we are skipping the password screen
-            self.crypt_services = CryptServices(saved_username)
-            self.crypt_services.load_database_without_password()
-
-            self.network.connect()
+        if len(self.sessions) == 1:
+            # Auto-login if only one account exists
+            saved_username, saved_token = list(self.sessions.items())[0]
+            self._execute_token_login(saved_username, saved_token)
+        elif len(self.sessions) > 1:
+            # Route to the Account Selector UI
+            self.update_ui("SHOW_ACCOUNT_SELECTOR", self.sessions)
+            self.set_status("Multiple accounts found. Please select one.", "info")
         else:
+            # No accounts found
+            self.update_ui("SWITCH_TO_LOGIN")
             self.update_ui("ENABLE_LOGIN")
             self.set_status("Ready. Please log in or register.", "info")
+
+    def _execute_token_login(self, saved_username, saved_token):
+        """Helper to inject the token and connect the websocket."""
+        print(f"Executing token login for {saved_username}")
+        self.username = saved_username
+        self.network.set_session_token(saved_token)
+
+        # Initialize crypt services since we are skipping the password screen
+        self.crypt_services = CryptServices(saved_username)
+        self.crypt_services.load_database_without_password()
+
+        self.network.connect()
+
+    def select_account_and_login(self, username, token):
+        """Triggered by the UI when the user selects a specific account."""
+        self.set_status(f"Logging in as {username}...", "info")
+        self.page.run_task(self._async_execute_token_login, username, token)
+        
+    async def _async_execute_token_login(self, username, token):
+        self._execute_token_login(username, token)
 
     def handle_lifecycle_change(self, state: str):
         """Handle Flet app lifecycle changes (resumed, paused, etc.)"""
@@ -399,7 +437,7 @@ class AppController:
     def logout(self):
         # 1. Clear persistent storage
         try:
-            self.page.run_task(self._clear_session_storage)
+            self.page.run_task(self._remove_session_from_storage)
         except Exception as e:
             print(f"Could not remove session from storage: {e}")
 
@@ -412,6 +450,6 @@ class AppController:
         self.crypt_services = None
 
         # 4. Switch to login screen
-        self.update_ui("SWITCH_TO_LOGIN")
-        self.update_ui("ENABLE_LOGIN")
+        self.update_ui("SHOW_ACCOUNT_SELECTOR", self.sessions)
+        self.update_ui("CLEAR_UI_STATE")
         self.set_status("Logged out successfully", "info")
