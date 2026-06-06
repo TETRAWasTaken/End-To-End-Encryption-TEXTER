@@ -1,7 +1,7 @@
 [tool.flet]
-product = "Texter E2EE"
-org = "com.tetra.texter"
-company = "Tetra"
+product = "Texter"
+org = "com.anshumaan.texter"
+company = "Anshumaan"
 copyright = "Copyright (C) 2024"
 
 [tool.flet.app]
