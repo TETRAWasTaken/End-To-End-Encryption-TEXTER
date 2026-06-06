@@ -1,1 +1,0 @@
-web: python database/DatabaseInitialization.py && uvicorn Server.secure_asgi_server:app --host 0.0.0.0 --port 8000
