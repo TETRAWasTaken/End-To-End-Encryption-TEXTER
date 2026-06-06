@@ -49,7 +49,7 @@ Optional in deployment: **Caddy reverse proxy** (see `.github/workflows/main_tex
 
 Install the following before setup:
 
-- **Python 3.11+** (3.12 works with project workflows)
+- **Python 3.12+** (matches project workflow builds)
 - **Rust toolchain** (stable, with `cargo`)
 - **PostgreSQL 14+**
 - **OpenSSL** (if you want local TLS certificates)
@@ -93,14 +93,14 @@ Create a database and user (example):
 
 ```sql
 CREATE DATABASE texter_db;
-CREATE USER texter_user WITH PASSWORD 'change_this_password';
+CREATE USER texter_user WITH PASSWORD 'YOUR_SECURE_DB_PASSWORD';
 GRANT ALL PRIVILEGES ON DATABASE texter_db TO texter_user;
 ```
 
-Initialize schema:
+Initialize schema (uses interactive password prompt instead of putting credentials in command history):
 
 ```bash
-psql "<postgres-connection-string>" -f database/x3dh_init.sql
+psql -h localhost -U texter_user -d texter_db -f database/x3dh_init.sql
 ```
 
 ### 5) Configure environment variables
@@ -113,12 +113,40 @@ Recommended:
 - `JWT_SECRET` (must match Python server value)
 - `PORT` (defaults to `8001`)
 
-Example:
+Recommended: store secrets in a local env file (gitignored), then load it.
 
 ```bash
-export DATABASE_URL="<postgres-connection-string>"
-export JWT_SECRET="replace-with-strong-random-secret"
-export PORT="8001"
+set -a
+source .env.local
+set +a
+```
+
+Example `.env.local` values:
+
+```env
+DATABASE_URL=postgresql://texter_user@localhost:5432/texter_db
+# Password is intentionally omitted here and resolved from .pgpass
+JWT_SECRET=replace-with-strong-random-secret
+PORT=8001
+```
+
+Run `chmod 600 .env.local` after creating the file.
+
+Use `.pgpass` (or your platform equivalent) for database password handling when `DATABASE_URL` does not embed a password. If you prefer embedding credentials, use the full PostgreSQL DSN format with username and password included.
+Minimal `.pgpass` example (`~/.pgpass`, permission `0600`):
+
+```text
+localhost:5432:texter_db:texter_user:YOUR_SECURE_DB_PASSWORD
+```
+
+```bash
+chmod 600 ~/.pgpass
+```
+
+Generate a strong JWT secret with:
+
+```bash
+openssl rand -hex 32
 ```
 
 #### Python WebSocket Server (`/Server` + `/database`)
@@ -133,17 +161,19 @@ Use either:
 - `JWT_SECRET` (must match auth server)
 - `ALGORITHM` (optional, default `HS256`)
 
-Example:
+Example `.env.local` values:
 
-```bash
-export DB_HOST="localhost"
-export DB_NAME="texter_db"
-export DB_USER="texter_user"
-export DB_PASSWORD="change_this_password"
-export DB_PORT="5432"
-export JWT_SECRET="replace-with-strong-random-secret"
-export ALGORITHM="HS256"
+```env
+DB_HOST=localhost
+DB_NAME=texter_db
+DB_USER=texter_user
+DB_PASSWORD=YOUR_SECURE_DB_PASSWORD
+DB_PORT=5432
+JWT_SECRET=replace-with-strong-random-secret
+ALGORITHM=HS256
 ```
+
+Use the same `JWT_SECRET` value as the auth server.
 
 **Option B: local `database.ini`**
 Create a `database.ini` in repository root:
@@ -153,13 +183,18 @@ Create a `database.ini` in repository root:
 host=localhost
 database=texter_db
 user=texter_user
-password=your_db_password
+password=YOUR_SECURE_DB_PASSWORD
 port=5432
 ```
 
 > `database.ini` is gitignored and intended for local development.
 
 ### 6) Start servers
+
+Port mapping in this setup:
+- `8001` -> Rust Auth Server
+- `8002` -> Python WebSocket Server
+- `8000` -> Optional reverse proxy entrypoint (if used)
 
 #### Start Rust Auth Server
 
@@ -171,13 +206,35 @@ cargo run
 #### Start Python WebSocket Server (new terminal)
 
 ```bash
-cd /path/to/End-To-End-Encryption-TEXTER
+# From repository root
 python -m uvicorn Server.secure_asgi_server:app --host 127.0.0.1 --port 8002
 ```
+
+This local guide uses IPv4 localhost (`127.0.0.1`) for broad compatibility.
 
 ### 7) (Optional) Run through a single gateway on port 8000
 
 For one public entrypoint (`/api/auth/*` and `/ws` on same host), run with a reverse proxy (for example Caddy) similar to `.github/workflows/main_textere2ee.yml`.
+
+Minimal local `Caddyfile`:
+
+```caddy
+:8000 {
+    handle /api/auth/* {
+        reverse_proxy 127.0.0.1:8001
+    }
+
+    handle /ws* {
+        reverse_proxy 127.0.0.1:8002
+    }
+}
+```
+
+Then run:
+
+```bash
+caddy run --config Caddyfile
+```
 
 ### 8) Configure and run the client
 
@@ -192,7 +249,11 @@ By default, the client targets the hosted endpoint defined in:
 
 To test local backend:
 1. Update local addresses in `NetworkService` (`ws_uri` and `auth_url`) for `use_local=True`
-2. Pass `use_local=True` where `AppController` is created in `/TexterFlet/main.py`
+2. In `/TexterFlet/main.py`, change:
+   - `AppController(page, handle_ui_update, handle_status)`
+   - to `AppController(page, handle_ui_update, handle_status, use_local=True)`
+   - (the current codebase does not expose an environment variable toggle for this yet)
+3. Optional improvement for contributors: add a runtime config/env toggle for `use_local` to avoid manual source edits during local testing
 
 ---
 
